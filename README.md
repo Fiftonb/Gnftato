@@ -161,8 +161,8 @@ MIT License
 
 ## 项目参考
 
-本项目基于[Nftato脚本](https://github.com/Fiftonb/Gnftato)开发，是从iptables迁移到nftables的升级版本。
-> 原脚本基于iPtato进行改进，使用nftables替代iptables实现更现代化的防火墙管理。
+本项目基于[GiPtato](https://github.com/Fiftonb/Gnftato)开发，内核脚本从iptables迁移到nftables的升级版本。
+> 使用nftables替代iptables实现更现代化的防火墙管理。
 
 不使用面板只想使用脚本(完善后的脚本)
 
@@ -173,11 +173,6 @@ wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato
 ```sh
 ./Nftato.sh
 ```
-
-
-# Nftato
-通过简单的脚本，实现控制系统的出入网络流量，基于nftables实现
-使用文档可参考[Nftato readme](https://github.com/Fiftonb/Gnftato/blob/main/README.md)
 
 ## 功能简介
 ### 适配系统

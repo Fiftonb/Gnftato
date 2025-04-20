@@ -2,7 +2,7 @@
   <div id="app">
     <el-header class="header" v-if="isAuthenticated">
       <div class="header-left">
-        <h1>GiPtato 防火墙管理系统</h1>
+        <h1>Gnftato 防火墙管理系统</h1>
       </div>
       <div class="header-right">
         <el-dropdown trigger="click" @command="handleCommand">

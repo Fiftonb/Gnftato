@@ -1,3 +1,17 @@
 {
-  "servers": []
+  "servers": [
+    {
+      "_id": "1740e30e-5bf4-4de1-9402-4c64ee44c54a",
+      "name": "45.76.111.162",
+      "host": "45.76.111.162",
+      "port": 22,
+      "username": "root",
+      "authType": "password",
+      "password": "h2]Zy.TdochU}tAk",
+      "privateKey": "",
+      "status": "offline",
+      "createdAt": "2025-04-20T13:41:16.153Z",
+      "updatedAt": "2025-04-20T14:07:06.522Z"
+    }
+  ]
 }

@@ -664,7 +664,7 @@ class SSHService {
    * @param {string|number} action - 要执行的操作代码
    * @returns {Promise<object>} - 执行结果
    */
-  async executeIptato(serverId, action) {
+  async executeNftato(serverId, action) {
     try {
       console.log(`[诊断] 准备执行Nftato脚本，服务器ID: ${serverId}, 动作: ${action}`);
       

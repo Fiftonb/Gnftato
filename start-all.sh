@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 显示启动信息
-echo "正在启动 GiPtato 应用..."
+echo "正在启动 Gnftato 应用..."
 
 # 启动后端（稳定模式）
 echo "启动后端服务器..."

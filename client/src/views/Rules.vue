@@ -234,7 +234,7 @@
               <li>检查服务器磁盘空间是否足够</li>
               <li>查看服务器日志文件 (/var/log/syslog 或 /var/log/messages)</li>
               <li>尝试在服务器上手动执行以下命令:</li>
-              <pre class="command-example">wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash iPtato.sh</pre>
+              <pre class="command-example">wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash iPtato.sh</pre>
               <li>如仍无法解决，请联系管理员或提交详细错误报告</li>
             </ol>
           </el-collapse-item>
@@ -1284,7 +1284,7 @@ export default {
         
         const response = await this.$store.dispatch('servers/executeCommand', {
           serverId: this.serverId,
-          command: 'wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash iPtato.sh'
+          command: 'wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash iPtato.sh'
         });
         
         if (response && response.success) {
@@ -1591,7 +1591,7 @@ export default {
         
         this.debugInfo += '## 1. 部署iPtato脚本\n';
         this.debugInfo += '```\n';
-        this.debugInfo += 'cd ~ && wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh\n';
+        this.debugInfo += 'cd ~ && wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh\n';
         this.debugInfo += '```\n\n';
         
         this.debugInfo += '## 2. 测试iPtato脚本\n';

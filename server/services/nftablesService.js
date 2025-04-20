@@ -100,7 +100,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 0);
+      const result = await sshService.executeNftato(serverId, 0);
       return {
         success: result.success,
         data: result.output,
@@ -128,7 +128,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 1);
+      const result = await sshService.executeNftato(serverId, 1);
       return {
         success: result.success,
         data: result.output,
@@ -156,7 +156,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 2);
+      const result = await sshService.executeNftato(serverId, 2);
       return {
         success: result.success,
         data: result.output,
@@ -184,7 +184,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 3);
+      const result = await sshService.executeNftato(serverId, 3);
       return {
         success: result.success,
         data: result.output,
@@ -207,7 +207,7 @@ class NftablesService {
    */
   async blockCustomPorts(serverId, ports) {
     try {
-      const result = await this._executeIptatoCommand(serverId, 4, ports);
+      const result = await this._executeNftatoCommand(serverId, 4, ports);
       
       return {
         success: result.success,
@@ -231,7 +231,7 @@ class NftablesService {
    */
   async blockCustomKeyword(serverId, keyword) {
     try {
-      const result = await this._executeIptatoCommand(serverId, 5, keyword);
+      const result = await this._executeNftatoCommand(serverId, 5, keyword);
       
       return {
         success: result.success,
@@ -260,7 +260,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 6);
+      const result = await sshService.executeNftato(serverId, 6);
       return {
         success: result.success,
         data: result.output,
@@ -288,7 +288,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 7);
+      const result = await sshService.executeNftato(serverId, 7);
       return {
         success: result.success,
         data: result.output,
@@ -316,7 +316,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 8);
+      const result = await sshService.executeNftato(serverId, 8);
       return {
         success: result.success,
         data: result.output,
@@ -339,7 +339,7 @@ class NftablesService {
    */
   async unblockCustomPorts(serverId, ports) {
     try {
-      const result = await this._executeIptatoCommand(serverId, 9, ports);
+      const result = await this._executeNftatoCommand(serverId, 9, ports);
       
       return {
         success: result.success,
@@ -363,7 +363,7 @@ class NftablesService {
    */
   async unblockCustomKeyword(serverId, keyword) {
     try {
-      const result = await this._executeIptatoCommand(serverId, 10, keyword);
+      const result = await this._executeNftatoCommand(serverId, 10, keyword);
       
       return {
         success: result.success,
@@ -392,7 +392,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 11);
+      const result = await sshService.executeNftato(serverId, 11);
       return {
         success: result.success,
         data: result.output,
@@ -420,7 +420,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 13);
+      const result = await sshService.executeNftato(serverId, 13);
       
       // 处理结果
       if (result.success) {
@@ -476,7 +476,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 14);
+      const result = await sshService.executeNftato(serverId, 14);
       
       // 处理结果
       if (result.success) {
@@ -527,7 +527,7 @@ class NftablesService {
    */
   async allowInboundPorts(serverId, ports) {
     try {
-      const result = await this._executeIptatoCommand(serverId, 15, ports);
+      const result = await this._executeNftatoCommand(serverId, 15, ports);
       
       return {
         success: result.success,
@@ -551,7 +551,7 @@ class NftablesService {
    */
   async disallowInboundPorts(serverId, ports) {
     try {
-      const result = await this._executeIptatoCommand(serverId, 16, ports);
+      const result = await this._executeNftatoCommand(serverId, 16, ports);
       
       return {
         success: result.success,
@@ -575,7 +575,7 @@ class NftablesService {
    */
   async allowInboundIPs(serverId, ips) {
     try {
-      const result = await this._executeIptatoCommand(serverId, 17, ips);
+      const result = await this._executeNftatoCommand(serverId, 17, ips);
       
       return {
         success: result.success,
@@ -599,7 +599,7 @@ class NftablesService {
    */
   async disallowInboundIPs(serverId, ips) {
     try {
-      const result = await this._executeIptatoCommand(serverId, 18, ips);
+      const result = await this._executeNftatoCommand(serverId, 18, ips);
       
       return {
         success: result.success,
@@ -628,7 +628,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 19);
+      const result = await sshService.executeNftato(serverId, 19);
       return {
         success: result.success,
         data: result.output,
@@ -656,7 +656,7 @@ class NftablesService {
         return prereqCheck;
       }
       
-      const result = await sshService.executeIptato(serverId, 20);
+      const result = await sshService.executeNftato(serverId, 20);
       return {
         success: result.success,
         data: result.output,
@@ -678,7 +678,7 @@ class NftablesService {
    * @param {string} params - 要传递的参数
    * @returns {Promise<object>} - 执行结果
    */
-  async _executeIptatoCommand(serverId, action, params = '') {
+  async _executeNftatoCommand(serverId, action, params = '') {
     try {
       console.log(`[诊断] 准备执行Nftato命令，服务器ID: ${serverId}, 动作: ${action}, 参数: ${params}`);
       
@@ -697,10 +697,10 @@ class NftablesService {
       try {
         let result;
         
-        // 优先使用sshService的executeIptato方法
+        // 优先使用sshService的executeNftato方法
         if (!params) {
-          console.log(`[诊断] 使用executeIptato执行命令，动作: ${action}`);
-          result = await sshService.executeIptato(serverId, action);
+          console.log(`[诊断] 使用executeNftato执行命令，动作: ${action}`);
+          result = await sshService.executeNftato(serverId, action);
         } else {
           // 对于需要参数的命令，获取脚本路径并执行
           console.log(`[诊断] 获取脚本路径并执行命令`);
@@ -735,7 +735,7 @@ class NftablesService {
         };
       }
     } catch (error) {
-      console.error(`[诊断] _executeIptatoCommand方法异常: ${error.message}`);
+      console.error(`[诊断] _executeNftatoCommand方法异常: ${error.message}`);
       console.error(`[诊断] 异常堆栈: ${error.stack}`);
       
       return {
@@ -763,8 +763,8 @@ class NftablesService {
         udp: []
       };
       
-      // 提取TCP部分
-      const tcpMatch = output.match(/TCP\s+([\s\S]*?)(?=\n={3,}|\nUDP)/);
+      // 提取TCP部分 - 适应新的格式
+      const tcpMatch = output.match(/TCP端口:([\s\S]*?)={3,}/);
       if (tcpMatch && tcpMatch[1]) {
         // 提取数字
         const tcpPorts = tcpMatch[1].match(/\d+/g);
@@ -773,8 +773,8 @@ class NftablesService {
         }
       }
       
-      // 提取UDP部分
-      const udpMatch = output.match(/UDP\s+([\s\S]*?)(?=\n={3,}|$)/);
+      // 提取UDP部分 - 适应新的格式
+      const udpMatch = output.match(/UDP端口:([\s\S]*?)={3,}/);
       if (udpMatch && udpMatch[1]) {
         // 提取数字
         const udpPorts = udpMatch[1].match(/\d+/g);
@@ -800,9 +800,16 @@ class NftablesService {
       // 移除ANSI颜色代码
       output = output.replace(/\u001b\[\d+(;\d+)?m/g, '');
       
-      // 提取所有IP地址
-      const ipAddresses = output.match(/\d+\.\d+\.\d+\.\d+/g) || [];
+      // 提取IP部分 - 适应新的格式
+      const ipSection = output.match(/=============== 当前已放行 IP ===============([\s\S]*?)={3,}/);
+      if (ipSection && ipSection[1]) {
+        // 提取所有IP地址
+        const ipAddresses = ipSection[1].match(/\d+\.\d+\.\d+\.\d+/g) || [];
+        return ipAddresses;
+      }
       
+      // 如果没有找到特定格式，尝试提取所有IP地址
+      const ipAddresses = output.match(/\d+\.\d+\.\d+\.\d+/g) || [];
       return ipAddresses;
     } catch (error) {
       console.error(`[诊断] 解析IP输出失败: ${error.message}`);

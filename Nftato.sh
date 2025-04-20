@@ -1390,12 +1390,12 @@ Update_Shell() {
     
     # 根据网络环境选择不同的URL
     if [ $IN_CHINA -eq 1 ]; then
-        DOWNLOAD_URL="https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/Nftato.sh"
-        VERSION_URL="https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/Nftato.sh"
+        DOWNLOAD_URL="https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh"
+        VERSION_URL="https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh"
         echo "使用国内GitHub代理加速更新..."
     else
-        DOWNLOAD_URL="https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/Nftato.sh"
-        VERSION_URL="https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/Nftato.sh"
+        DOWNLOAD_URL="https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh"
+        VERSION_URL="https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh"
         echo "使用GitHub直接更新..."
     fi
     

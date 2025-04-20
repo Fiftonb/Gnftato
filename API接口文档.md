@@ -1,4 +1,4 @@
-# GiPtato API 接口文档
+# Gnftato API 接口文档
 
 ## 基础信息
 - **基础URL**: `http://localhost:3000/api`

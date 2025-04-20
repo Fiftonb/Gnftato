@@ -2,7 +2,7 @@
   <div class="login-container">
     <el-card class="login-card">
       <div slot="header" class="clearfix">
-        <h2>GiPtato 防火墙管理系统</h2>
+        <h2>Gnftato 防火墙管理系统</h2>
       </div>
       <el-form 
         ref="loginForm" 
