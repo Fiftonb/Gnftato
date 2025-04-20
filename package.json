@@ -1,0 +1,21 @@
+{
+  "name": "iptato-panel",
+  "version": "1.0.0",
+  "description": "iPtato防火墙规则多服务器管理面板",
+  "main": "index.js",
+  "scripts": {
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "start": "cd server && npm start",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run serve",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "cd client && npm run build",
+    "setup": "npm i && cd server && npm i && mkdir -p public && cd ../client && npm i --force",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^6.3.0"
+  }
+} 

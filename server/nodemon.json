@@ -1,0 +1,18 @@
+{
+  "watch": ["**/*.js", "**/*.json"],
+  "ignore": [
+    "node_modules",
+    "logs/*",
+    "*.log",
+    "tmp/*",
+    ".git",
+    "public/*",
+    "sessions/*",
+    ".ssh/*",
+    "**/.DS_Store",
+    "**/.tmp.*"
+  ],
+  "verbose": true,
+  "ext": "js,json",
+  "delay": "1000"
+} 

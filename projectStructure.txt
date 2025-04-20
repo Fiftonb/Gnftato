@@ -1,0 +1,35 @@
+iptatoPanel/
+├── client/                 # 前端Vue项目
+│   ├── src/
+│   │   ├── views/          # 页面组件
+│   │   │   ├── Home.vue    # 主页/仪表盘
+│   │   │   ├── Servers.vue # 服务器管理
+│   │   │   ├── Rules.vue   # 防火墙规则管理
+│   │   ├── components/     # 通用组件
+│   │   ├── store/          # Vuex状态管理
+│   │   │   ├── modules/
+│   │   │   │   ├── servers.js # 服务器状态管理
+│   │   │   │   ├── rules.js   # 规则状态管理
+│   │   ├── public/             # 静态资源
+├── server/                 # 后端Express项目
+│   ├── controllers/        # 控制器
+│   │   ├── serverController.js    # 服务器管理
+│   │   ├── rulesController.js     # 规则管理
+│   │   ├── models/             # 数据模型
+│   │   │   ├── Server.js       # 服务器模型
+│   │   │   ├── Rule.js         # 规则模型
+│   │   ├── services/           # 业务逻辑
+│   │   │   ├── sshService.js   # SSH连接服务
+│   │   │   ├── iptablesService.js # iptables管理服务
+│   │   ├── routes/             # API路由
+│   │   │   ├── serverRoutes.js 
+│   │   │   ├── rulesRoutes.js
+│   │   ├── config/             # 配置文件
+│   │   │   ├── db.js           # 数据库配置
+│   │   │   ├── ssh.js          # SSH配置
+│   │   ├── scripts/            # 脚本文件
+│   │   │   ├── iptato.sh       # 原始脚本
+│   │   ├── app.js              # 主应用入口
+├── .env                    # 环境变量
+├── package.json
+├── README.md 

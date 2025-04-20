@@ -1,0 +1,14 @@
+{
+  "PORT": 3001,
+  "HOST": "0.0.0.0",
+  "CORS_ORIGIN": "*",
+  "DATA_DIR": "./server/data",
+  "DB_PATH": "./data/database.json",
+  "JWT_SECRET": "iptato-secure-jwt-secret-key",
+  "JWT_EXPIRES_IN": "7d",
+  "LOG_LEVEL": "info",
+  "LOG_DIR": "./logs",
+  "TMP_DIR": "./tmp",
+  "NODE_ENV": "development",
+  "STABLE_MODE": "true"
+} 
