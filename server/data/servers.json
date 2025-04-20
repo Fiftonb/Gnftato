@@ -9,9 +9,10 @@
       "authType": "password",
       "password": "h2]Zy.TdochU}tAk",
       "privateKey": "",
-      "status": "offline",
+      "status": "online",
       "createdAt": "2025-04-20T13:41:16.153Z",
-      "updatedAt": "2025-04-20T18:44:19.820Z"
+      "updatedAt": "2025-04-20T18:52:20.913Z",
+      "lastConnection": "2025-04-20T18:52:20.912Z"
     }
   ]
 }
