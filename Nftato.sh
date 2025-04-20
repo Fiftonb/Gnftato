@@ -2448,7 +2448,7 @@ if [[ ! -z $action ]]; then
 fi
 
 show_main_menu
-read -e -p " 请输入数字 [0-21]:" num
+read -e -p " 请输入数字 [0-25]:" num
 case "$num" in
     0)
     view_all_disable_out
