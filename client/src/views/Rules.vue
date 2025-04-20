@@ -16,6 +16,100 @@
     </div>
 
     <el-tabs v-model="activeTab" type="card">
+      <el-tab-pane label="入网控制" name="inbound">
+        <template v-if="!isServerOnline">
+          <el-alert
+            title="服务器当前处于离线状态"
+            type="warning"
+            description="服务器离线时无法管理防火墙规则，请先连接服务器"
+            show-icon
+            :closable="false"
+            style="margin-bottom: 15px;">
+          </el-alert>
+          
+          <div class="server-offline">
+            <i class="el-icon-connection"></i>
+            <h3>服务器未连接</h3>
+            <p>当前无法管理防火墙规则，请先连接服务器</p>
+          </div>
+          
+          <div class="offline-actions">
+            <el-button type="primary" @click="tryConnectServer" :loading="connecting" icon="el-icon-refresh">连接服务器</el-button>
+            <el-button @click="$router.push('/servers')" icon="el-icon-back">返回服务器列表</el-button>
+          </div>
+        </template>
+        
+        <div v-else>
+          <el-card>
+            <div slot="header">
+              <span>SSH端口状态</span>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshSSHPort">刷新</el-button>
+            </div>
+            
+            <pre v-if="sshPortStatus" class="output">{{ sshPortStatus }}</pre>
+            <div v-else>加载中...</div>
+          </el-card>
+
+          <el-card style="margin-top: 20px;">
+            <div slot="header">
+              <span>入网端口管理</span>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundPorts">刷新</el-button>
+            </div>
+            
+            <el-table v-loading="loadingPorts" :data="inboundPorts" style="width: 100%">
+              <el-table-column prop="port" label="端口" width="180"></el-table-column>
+              <el-table-column prop="protocol" label="协议" width="100"></el-table-column>
+              <el-table-column label="操作">
+                <template slot-scope="scope">
+                  <el-tooltip v-if="isSshPort(scope.row.port)" content="不能取消SSH端口放行，这可能导致无法连接服务器" placement="top">
+                    <el-button type="danger" size="mini" disabled>取消放行</el-button>
+                  </el-tooltip>
+                  <el-button v-else type="danger" size="mini" @click="disallowPort(scope.row.port)" :disabled="!isServerOnline">取消放行</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            
+            <el-divider></el-divider>
+            
+            <el-form :inline="true" @submit.native.prevent="allowPort">
+              <el-form-item label="放行端口">
+                <el-input v-model="portToAllow" placeholder="如: 80,443" :disabled="!isServerOnline"></el-input>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="allowPort" :loading="loading" :disabled="!isServerOnline">添加</el-button>
+              </el-form-item>
+            </el-form>
+          </el-card>
+
+          <el-card style="margin-top: 20px;">
+            <div slot="header">
+              <span>入网IP管理</span>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundIPs">刷新</el-button>
+            </div>
+            
+            <el-table v-loading="loadingIPs" :data="inboundIPs" style="width: 100%">
+              <el-table-column prop="ip" label="IP地址" width="180"></el-table-column>
+              <el-table-column label="操作">
+                <template slot-scope="scope">
+                  <el-button type="danger" size="mini" @click="disallowIP(scope.row.ip || scope.row)" :disabled="!isServerOnline">取消放行</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            
+            <el-divider></el-divider>
+            
+            <el-form :inline="true" @submit.native.prevent="allowIP">
+              <el-form-item label="放行IP">
+                <el-input v-model="ipToAllow" placeholder="如: 192.168.1.1" :disabled="!isServerOnline"></el-input>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="allowIP" :loading="loading" :disabled="!isServerOnline">添加</el-button>
+              </el-form-item>
+            </el-form>
+          </el-card>
+        </div>
+      </el-tab-pane>
+
       <el-tab-pane label="出网控制" name="outbound">
         <template v-if="!isServerOnline">
           <el-alert
@@ -115,100 +209,6 @@
           </el-card>
         </div>
       </el-tab-pane>
-
-      <el-tab-pane label="入网控制" name="inbound">
-        <template v-if="!isServerOnline">
-          <el-alert
-            title="服务器当前处于离线状态"
-            type="warning"
-            description="服务器离线时无法管理防火墙规则，请先连接服务器"
-            show-icon
-            :closable="false"
-            style="margin-bottom: 15px;">
-          </el-alert>
-          
-          <div class="server-offline">
-            <i class="el-icon-connection"></i>
-            <h3>服务器未连接</h3>
-            <p>当前无法管理防火墙规则，请先连接服务器</p>
-          </div>
-          
-          <div class="offline-actions">
-            <el-button type="primary" @click="tryConnectServer" :loading="connecting" icon="el-icon-refresh">连接服务器</el-button>
-            <el-button @click="$router.push('/servers')" icon="el-icon-back">返回服务器列表</el-button>
-          </div>
-        </template>
-        
-        <div v-else>
-          <el-card>
-            <div slot="header">
-              <span>SSH端口状态</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshSSHPort">刷新</el-button>
-            </div>
-            
-            <pre v-if="sshPortStatus" class="output">{{ sshPortStatus }}</pre>
-            <div v-else>加载中...</div>
-          </el-card>
-
-          <el-card style="margin-top: 20px;">
-            <div slot="header">
-              <span>入网端口管理</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundPorts">刷新</el-button>
-            </div>
-            
-            <el-table v-loading="loadingPorts" :data="inboundPorts" style="width: 100%">
-              <el-table-column prop="port" label="端口" width="180"></el-table-column>
-              <el-table-column prop="protocol" label="协议" width="100"></el-table-column>
-              <el-table-column label="操作">
-                <template slot-scope="scope">
-                  <el-tooltip v-if="isSshPort(scope.row.port)" content="不能取消SSH端口放行，这可能导致无法连接服务器" placement="top">
-                    <el-button type="danger" size="mini" disabled>取消放行</el-button>
-                  </el-tooltip>
-                  <el-button v-else type="danger" size="mini" @click="disallowPort(scope.row.port)" :disabled="!isServerOnline">取消放行</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            
-            <el-divider></el-divider>
-            
-            <el-form :inline="true" @submit.native.prevent="allowPort">
-              <el-form-item label="放行端口">
-                <el-input v-model="portToAllow" placeholder="如: 80,443" :disabled="!isServerOnline"></el-input>
-              </el-form-item>
-              <el-form-item>
-                <el-button type="primary" @click="allowPort" :loading="loading" :disabled="!isServerOnline">添加</el-button>
-              </el-form-item>
-            </el-form>
-          </el-card>
-
-          <el-card style="margin-top: 20px;">
-            <div slot="header">
-              <span>入网IP管理</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundIPs">刷新</el-button>
-            </div>
-            
-            <el-table v-loading="loadingIPs" :data="inboundIPs" style="width: 100%">
-              <el-table-column prop="ip" label="IP地址" width="180"></el-table-column>
-              <el-table-column label="操作">
-                <template slot-scope="scope">
-                  <el-button type="danger" size="mini" @click="disallowIP(scope.row.ip || scope.row)" :disabled="!isServerOnline">取消放行</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            
-            <el-divider></el-divider>
-            
-            <el-form :inline="true" @submit.native.prevent="allowIP">
-              <el-form-item label="放行IP">
-                <el-input v-model="ipToAllow" placeholder="如: 192.168.1.1" :disabled="!isServerOnline"></el-input>
-              </el-form-item>
-              <el-form-item>
-                <el-button type="primary" @click="allowIP" :loading="loading" :disabled="!isServerOnline">添加</el-button>
-              </el-form-item>
-            </el-form>
-          </el-card>
-        </div>
-      </el-tab-pane>
     </el-tabs>
 
     <el-card v-if="commandOutput" style="margin-top: 20px">
@@ -303,7 +303,7 @@ export default {
   },
   data() {
     return {
-      activeTab: 'outbound',
+      activeTab: 'inbound',
       loading: false,
       deploying: false,
       connecting: false,
@@ -376,7 +376,7 @@ export default {
     }
   },
   created() {
-    this.activeTab = 'outbound';
+    this.activeTab = 'inbound';
     
     if (this.hasValidServerId) {
       this.$nextTick(async () => {
