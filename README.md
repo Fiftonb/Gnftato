@@ -2,7 +2,7 @@
 
 基于Nftato.sh脚本开发的可视化多服务器防火墙规则管理面板，支持通过SSH远程连接管理多台服务器的nftables规则。
 
-> 不建议使用关键词封禁功能，效率很低，会导致某些应用连接超时
+> 不建议使用关键词封禁功能（iptables实现），效率很低，会导致某些应用连接超时
 
 ## 功能特色
 
@@ -15,6 +15,10 @@
 - **登录认证**：用户身份验证，保护管理界面安全
 
 > 需要注意，使用同类用到nftables命令的工具会使规则冲突。清除规则则可以夺回控制权。脚本首次运行默认只放行ssh端口，且ssh端口无法取消放行。
+
+## TODO
+
+- [ ] 实现端口限速
 
 ## 技术栈
 
@@ -33,8 +37,8 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/Fiftonb/GiPtato.git
-cd GiPtato
+git clone https://github.com/Fiftonb/Gnftato.git
+cd Gnftato
 ```
 
 ### 2. 安装依赖
