@@ -1,7 +1,7 @@
 {
-  "name": "iptato-panel",
+  "name": "nftato-panel",
   "version": "1.0.0",
-  "description": "iPtato防火墙规则多服务器管理面板",
+  "description": "Nftato防火墙规则多服务器管理面板",
   "main": "index.js",
   "scripts": {
     "install:all": "npm install && cd server && npm install && cd ../client && npm install",

@@ -565,7 +565,7 @@ class SSHService {
         throw new Error('服务器未找到');
       }
       
-      console.log(`开始在服务器 ${server.name} (${server.host}) 上部署iPtato脚本`);
+      console.log(`开始在服务器 ${server.name} (${server.host}) 上部署Nftato脚本`);
       
       // 检查用户是否有root权限
       const checkSudo = await this.executeCommand(serverId, 'sudo -n true 2>/dev/null && echo "has_sudo" || echo "no_sudo"');
@@ -582,14 +582,14 @@ class SSHService {
       // 根据网络环境选择下载URL
       if (networkEnv.stdout.includes('china')) {
         console.log('检测到国内网络环境，使用代理下载...');
-        downloadUrl = 'https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh';
+        downloadUrl = 'https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh';
       } else {
         console.log('检测到可直接访问国际网络，使用原始URL下载...');
-        downloadUrl = 'https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh';
+        downloadUrl = 'https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh';
       }
       
       // 构建下载命令，添加重试机制
-      const downloadCommand = `cd ~ && wget -N --no-check-certificate --tries=3 --timeout=15 ${downloadUrl} -O iPtato.sh && chmod +x iPtato.sh`;
+      const downloadCommand = `cd ~ && wget -N --no-check-certificate --tries=3 --timeout=15 ${downloadUrl} -O Nftato.sh && chmod +x Nftato.sh`;
       console.log(`执行下载命令: ${downloadCommand}`);
       
       // 执行下载命令
@@ -602,8 +602,8 @@ class SSHService {
         // 如果失败，尝试使用备用URL
         console.log('尝试使用备用方法下载...');
         const fallbackCommand = networkEnv.stdout.includes('china') 
-          ? `cd ~ && curl -o iPtato.sh https://cdn.jsdelivr.net/gh/Fiftonb/GiPtato@main/iPtato.sh && chmod +x iPtato.sh`
-          : `cd ~ && curl -o iPtato.sh https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh`;
+          ? `cd ~ && curl -o Nftato.sh https://cdn.jsdelivr.net/gh/Fiftonb/Gnftato@main/Nftato.sh && chmod +x Nftato.sh`
+          : `cd ~ && curl -o Nftato.sh https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh && chmod +x Nftato.sh`;
           
         console.log(`执行备用下载命令: ${fallbackCommand}`);
         const fallbackResult = await this.executeCommand(serverId, fallbackCommand);
@@ -616,7 +616,7 @@ class SSHService {
       }
       
       // 验证脚本是否下载成功到用户目录
-      const checkResult = await this.executeCommand(serverId, 'test -f ~/iPtato.sh && echo "exists" || echo "not found"');
+      const checkResult = await this.executeCommand(serverId, 'test -f ~/Nftato.sh && echo "exists" || echo "not found"');
       if (checkResult.stdout.includes('not found')) {
         console.error(`脚本下载验证失败，找不到脚本文件`);
         throw new Error('脚本文件未成功下载到用户目录');
@@ -625,10 +625,10 @@ class SSHService {
       // 如果有sudo权限，也复制到/root/目录
       if (hasSudo) {
         console.log(`尝试将脚本复制到/root/目录`);
-        await this.executeCommand(serverId, 'sudo cp ~/iPtato.sh /root/iPtato.sh && sudo chmod +x /root/iPtato.sh');
+        await this.executeCommand(serverId, 'sudo cp ~/Nftato.sh /root/Nftato.sh && sudo chmod +x /root/Nftato.sh');
         
         // 验证脚本是否成功复制到/root/
-        const rootCheck = await this.executeCommand(serverId, 'test -f /root/iPtato.sh && echo "exists" || echo "not found"');
+        const rootCheck = await this.executeCommand(serverId, 'test -f /root/Nftato.sh && echo "exists" || echo "not found"');
         if (rootCheck.stdout.includes('exists')) {
           console.log(`脚本已成功复制到/root/目录`);
         } else {
@@ -637,12 +637,12 @@ class SSHService {
       }
       
       // 验证至少一个位置的脚本权限
-      const permResult = await this.executeCommand(serverId, '(test -x ~/iPtato.sh && echo "home executable") || (test -x /root/iPtato.sh && echo "root executable") || echo "not executable"');
+      const permResult = await this.executeCommand(serverId, '(test -x ~/Nftato.sh && echo "home executable") || (test -x /root/Nftato.sh && echo "root executable") || echo "not executable"');
       if (permResult.stdout.includes('not executable')) {
         console.warn(`脚本权限不正确，尝试修复`);
-        await this.executeCommand(serverId, 'chmod +x ~/iPtato.sh');
+        await this.executeCommand(serverId, 'chmod +x ~/Nftato.sh');
         if (hasSudo) {
-          await this.executeCommand(serverId, 'sudo chmod +x /root/iPtato.sh');
+          await this.executeCommand(serverId, 'sudo chmod +x /root/Nftato.sh');
         }
       }
       
@@ -650,7 +650,7 @@ class SSHService {
       
       return {
         success: true,
-        message: 'iPtato脚本已成功部署到服务器'
+        message: 'Nftato脚本已成功部署到服务器'
       };
     } catch (error) {
       console.error(`部署脚本时发生错误:`, error);
@@ -659,14 +659,14 @@ class SSHService {
   }
 
   /**
-   * 在服务器上执行iPtato脚本命令
+   * 在服务器上执行Nftato脚本命令
    * @param {string} serverId - 服务器ID
    * @param {string|number} action - 要执行的操作代码
    * @returns {Promise<object>} - 执行结果
    */
   async executeIptato(serverId, action) {
     try {
-      console.log(`[诊断] 准备执行iPtato脚本，服务器ID: ${serverId}, 动作: ${action}`);
+      console.log(`[诊断] 准备执行Nftato脚本，服务器ID: ${serverId}, 动作: ${action}`);
       
       // 首先检查连接状态
       if (!this.checkConnection(serverId)) {
@@ -682,7 +682,7 @@ class SSHService {
       // 检查脚本是否存在（优先检查/root/目录，其次检查用户主目录）
       console.log(`[诊断] 检查脚本文件是否存在`);
       try {
-        const scriptCheck = await this.executeCommand(serverId, 'test -f /root/iPtato.sh && echo "exists in root" || (test -f ~/iPtato.sh && echo "exists in home" || echo "not found")');
+        const scriptCheck = await this.executeCommand(serverId, 'test -f /root/Nftato.sh && echo "exists in root" || (test -f ~/Nftato.sh && echo "exists in home" || echo "not found")');
         console.log(`[诊断] 脚本检查结果: ${scriptCheck.stdout.trim()}`);
         
         if (scriptCheck.stdout.includes('not found')) {
@@ -690,15 +690,15 @@ class SSHService {
           return {
             success: false,
             output: '',
-            error: 'iPtato脚本未找到，请先部署脚本',
+            error: 'Nftato脚本未找到，请先部署脚本',
             code: -1
           };
         }
 
         // 确定脚本路径（优先使用root目录）
-        let scriptPath = '/root/iPtato.sh';
+        let scriptPath = '/root/Nftato.sh';
         if (!scriptCheck.stdout.includes('exists in root')) {
-          scriptPath = '~/iPtato.sh';
+          scriptPath = '~/Nftato.sh';
         }
         console.log(`[诊断] 使用脚本路径: ${scriptPath}`);
 

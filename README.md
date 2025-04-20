@@ -1,6 +1,6 @@
-# GiPtato Panel - 多服务器防火墙规则管理面板
+# GNftato Panel - 多服务器防火墙规则管理面板
 
-基于iPtato.sh脚本开发的可视化多服务器防火墙规则管理面板，支持通过SSH远程连接管理多台服务器的iptables规则。
+基于Nftato.sh脚本开发的可视化多服务器防火墙规则管理面板，支持通过SSH远程连接管理多台服务器的nftables规则。
 
 > 不建议使用关键词封禁功能，效率很低，会导致某些应用连接超时
 
@@ -14,7 +14,7 @@
 - **状态监控**：实时查看各服务器的连接状态和规则列表
 - **登录认证**：用户身份验证，保护管理界面安全
 
-> 需要注意，使用同类用到iptables命令的工具会使规则冲突。清除规则则可以夺回控制权。脚本首次运行默认只放行ssh端口，且ssh端口无法取消放行。
+> 需要注意，使用同类用到nftables命令的工具会使规则冲突。清除规则则可以夺回控制权。脚本首次运行默认只放行ssh端口，且ssh端口无法取消放行。
 
 ## 技术栈
 
@@ -161,23 +161,23 @@ MIT License
 
 ## 项目参考
 
-本项目基于[iPtato脚本](https://github.com/Aipblock/iPtato)开发
-> 原脚本作者已经三年没有更新，基于脚本使用Ai工具完善了点功能，然后开发这个面板
+本项目基于[Nftato脚本](https://github.com/Fiftonb/Gnftato)开发，是从iptables迁移到nftables的升级版本。
+> 原脚本基于iPtato进行改进，使用nftables替代iptables实现更现代化的防火墙管理。
 
 不使用面板只想使用脚本(完善后的脚本)
 
 ```bash
-wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash iPtato.sh
+wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh && chmod +x Nftato.sh && bash Nftato.sh
 ```
 二次使用目录下执行
 ```sh
-./iPtato.sh
+./Nftato.sh
 ```
 
 
-# iPtato
-通过简单的脚本，实现控制系统的出入网络流量
-使用文档[iPtato readme](https://github.com/Aipblock/iPtato/blob/main/README.md)
+# Nftato
+通过简单的脚本，实现控制系统的出入网络流量，基于nftables实现
+使用文档可参考[Nftato readme](https://github.com/Fiftonb/Gnftato/blob/main/README.md)
 
 ## 功能简介
 ### 适配系统

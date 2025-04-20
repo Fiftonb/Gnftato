@@ -1,4 +1,4 @@
-const iptablesService = require('../services/iptablesService');
+const nftablesService = require('../services/nftablesService');
 const sshService = require('../services/sshService');
 const cacheService = require('../services/cacheService');
 
@@ -81,7 +81,7 @@ exports.getBlockList = async (req, res) => {
   try {
     const serverId = req.params.serverId;
     
-    const result = await iptablesService.getBlockList(serverId);
+    const result = await nftablesService.getBlockList(serverId);
     
     if (result.success) {
       // 如果请求成功，更新缓存
@@ -107,7 +107,7 @@ exports.getBlockList = async (req, res) => {
  */
 exports.blockBTPT = async (req, res) => {
   try {
-    const result = await iptablesService.blockBTPT(req.params.serverId);
+    const result = await nftablesService.blockBTPT(req.params.serverId);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -128,7 +128,7 @@ exports.blockBTPT = async (req, res) => {
  */
 exports.blockSPAM = async (req, res) => {
   try {
-    const result = await iptablesService.blockSPAM(req.params.serverId);
+    const result = await nftablesService.blockSPAM(req.params.serverId);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -149,7 +149,7 @@ exports.blockSPAM = async (req, res) => {
  */
 exports.blockAll = async (req, res) => {
   try {
-    const result = await iptablesService.blockAll(req.params.serverId);
+    const result = await nftablesService.blockAll(req.params.serverId);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -179,7 +179,7 @@ exports.blockCustomPorts = async (req, res) => {
       });
     }
     
-    const result = await iptablesService.blockCustomPorts(req.params.serverId, ports);
+    const result = await nftablesService.blockCustomPorts(req.params.serverId, ports);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -209,7 +209,7 @@ exports.blockCustomKeyword = async (req, res) => {
       });
     }
     
-    const result = await iptablesService.blockCustomKeyword(req.params.serverId, keyword);
+    const result = await nftablesService.blockCustomKeyword(req.params.serverId, keyword);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -230,7 +230,7 @@ exports.blockCustomKeyword = async (req, res) => {
  */
 exports.unblockBTPT = async (req, res) => {
   try {
-    const result = await iptablesService.unblockBTPT(req.params.serverId);
+    const result = await nftablesService.unblockBTPT(req.params.serverId);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -251,7 +251,7 @@ exports.unblockBTPT = async (req, res) => {
  */
 exports.unblockSPAM = async (req, res) => {
   try {
-    const result = await iptablesService.unblockSPAM(req.params.serverId);
+    const result = await nftablesService.unblockSPAM(req.params.serverId);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -272,7 +272,7 @@ exports.unblockSPAM = async (req, res) => {
  */
 exports.unblockAll = async (req, res) => {
   try {
-    const result = await iptablesService.unblockAll(req.params.serverId);
+    const result = await nftablesService.unblockAll(req.params.serverId);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -302,7 +302,7 @@ exports.unblockCustomPorts = async (req, res) => {
       });
     }
     
-    const result = await iptablesService.unblockCustomPorts(req.params.serverId, ports);
+    const result = await nftablesService.unblockCustomPorts(req.params.serverId, ports);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -332,7 +332,7 @@ exports.unblockCustomKeyword = async (req, res) => {
       });
     }
     
-    const result = await iptablesService.unblockCustomKeyword(req.params.serverId, keyword);
+    const result = await nftablesService.unblockCustomKeyword(req.params.serverId, keyword);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -353,7 +353,7 @@ exports.unblockCustomKeyword = async (req, res) => {
  */
 exports.unblockAllKeywords = async (req, res) => {
   try {
-    const result = await iptablesService.unblockAllKeywords(req.params.serverId);
+    const result = await nftablesService.unblockAllKeywords(req.params.serverId);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -375,7 +375,7 @@ exports.unblockAllKeywords = async (req, res) => {
 exports.getInboundPorts = async (req, res) => {
   try {
     const serverId = req.params.serverId;
-    const result = await iptablesService.getInboundPorts(serverId);
+    const result = await nftablesService.getInboundPorts(serverId);
     
     if (result.success) {
       // 如果请求成功，更新缓存
@@ -402,7 +402,7 @@ exports.getInboundPorts = async (req, res) => {
 exports.getInboundIPs = async (req, res) => {
   try {
     const serverId = req.params.serverId;
-    const result = await iptablesService.getInboundIPs(serverId);
+    const result = await nftablesService.getInboundIPs(serverId);
     
     if (result.success) {
       // 如果请求成功，更新缓存
@@ -437,7 +437,7 @@ exports.allowInboundPorts = async (req, res) => {
       });
     }
     
-    const result = await iptablesService.allowInboundPorts(req.params.serverId, ports);
+    const result = await nftablesService.allowInboundPorts(req.params.serverId, ports);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -467,7 +467,7 @@ exports.disallowInboundPorts = async (req, res) => {
       });
     }
     
-    const result = await iptablesService.disallowInboundPorts(req.params.serverId, ports);
+    const result = await nftablesService.disallowInboundPorts(req.params.serverId, ports);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -497,7 +497,7 @@ exports.allowInboundIPs = async (req, res) => {
       });
     }
     
-    const result = await iptablesService.allowInboundIPs(req.params.serverId, ips);
+    const result = await nftablesService.allowInboundIPs(req.params.serverId, ips);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -527,7 +527,7 @@ exports.disallowInboundIPs = async (req, res) => {
       });
     }
     
-    const result = await iptablesService.disallowInboundIPs(req.params.serverId, ips);
+    const result = await nftablesService.disallowInboundIPs(req.params.serverId, ips);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -549,7 +549,7 @@ exports.disallowInboundIPs = async (req, res) => {
 exports.getSSHPort = async (req, res) => {
   try {
     const serverId = req.params.serverId;
-    const result = await iptablesService.getSSHPort(serverId);
+    const result = await nftablesService.getSSHPort(serverId);
     
     if (result.success) {
       // 如果请求成功，更新缓存
@@ -575,7 +575,7 @@ exports.getSSHPort = async (req, res) => {
  */
 exports.clearAllRules = async (req, res) => {
   try {
-    const result = await iptablesService.clearAllRules(req.params.serverId);
+    const result = await nftablesService.clearAllRules(req.params.serverId);
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
