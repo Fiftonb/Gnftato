@@ -707,7 +707,7 @@ class NftablesService {
           const scriptPath = await this._getScriptPath(serverId);
           console.log(`[诊断] 获取到脚本路径: ${scriptPath}`);
           
-          result = await sshService.executeCommand(serverId, `bash ${scriptPath} ${action} "${params}"`);
+          result = await sshService.executeCommand(serverId, `bash ${scriptPath} ${action} ${params}`);
           
           // 格式化返回结果，保持一致性
           result = {
@@ -814,6 +814,142 @@ class NftablesService {
     } catch (error) {
       console.error(`[诊断] 解析IP输出失败: ${error.message}`);
       return [];
+    }
+  }
+
+  /**
+   * 配置DDoS防御规则
+   * @param {string} serverId - 服务器ID
+   * @returns {Promise<object>} - 操作结果
+   */
+  async setupDdosProtection(serverId) {
+    try {
+      // 检查前置条件
+      const prereqCheck = await this._checkPrerequisites(serverId);
+      if (!prereqCheck.success) {
+        return prereqCheck;
+      }
+      
+      const result = await sshService.executeNftato(serverId, 22);
+      return {
+        success: result.success,
+        data: result.output,
+        error: result.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: null,
+        error: `配置DDoS防御规则失败: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * 为自定义端口配置DDoS防御
+   * @param {string} serverId - 服务器ID
+   * @param {number} port - 端口号
+   * @param {number} protoType - 协议类型：1=TCP, 2=UDP, 3=TCP+UDP
+   * @param {number} maxConn - 每IP最大连接数
+   * @param {number} maxRateMin - 每分钟最大新连接数
+   * @param {number} maxRateSec - 每秒最大新连接数
+   * @param {number} banHours - 违规IP封禁时长(小时)
+   * @returns {Promise<object>} - 操作结果
+   */
+  async setupCustomPortProtection(serverId, port, protoType = 1, maxConn = 400, maxRateMin = 400, maxRateSec = 300, banHours = 24) {
+    try {
+      // 检查前置条件
+      const prereqCheck = await this._checkPrerequisites(serverId);
+      if (!prereqCheck.success) {
+        return prereqCheck;
+      }
+      
+      const params = `${port} ${protoType} ${maxConn} ${maxRateMin} ${maxRateSec} ${banHours}`;
+      const result = await this._executeNftatoCommand(serverId, 23, params);
+      return {
+        success: result.success,
+        data: result.output,
+        error: result.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: null,
+        error: `配置自定义端口DDoS防御失败: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * 管理IP黑白名单
+   * @param {string} serverId - 服务器ID
+   * @param {number} actionType - 操作类型：1=添加白名单, 2=添加黑名单, 3=从白名单移除, 4=从黑名单移除
+   * @param {string} ip - IP地址
+   * @param {number} duration - 有效期（白名单为天数，黑名单为小时数）
+   * @returns {Promise<object>} - 操作结果
+   */
+  async manageIpLists(serverId, actionType, ip, duration) {
+    try {
+      // 检查前置条件
+      const prereqCheck = await this._checkPrerequisites(serverId);
+      if (!prereqCheck.success) {
+        return prereqCheck;
+      }
+      
+      // 确保actionType是数字
+      const actionTypeNumber = parseInt(actionType, 10);
+      if (isNaN(actionTypeNumber)) {
+        return {
+          success: false,
+          data: null,
+          error: `无效的操作类型: ${actionType}`
+        };
+      }
+      
+      // 构造参数字符串
+      const params = `${actionTypeNumber} ${ip} ${duration || ''}`;
+      console.log(`[DEBUG] manageIpLists - 构造的参数: ${params}`);
+      
+      const result = await this._executeNftatoCommand(serverId, 24, params);
+      return {
+        success: result.success,
+        data: result.output,
+        error: result.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: null,
+        error: `管理IP黑白名单失败: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * 查看当前防御状态
+   * @param {string} serverId - 服务器ID
+   * @returns {Promise<object>} - 操作结果
+   */
+  async viewDefenseStatus(serverId) {
+    try {
+      // 检查前置条件
+      const prereqCheck = await this._checkPrerequisites(serverId);
+      if (!prereqCheck.success) {
+        return prereqCheck;
+      }
+      
+      const result = await sshService.executeNftato(serverId, 25);
+      return {
+        success: result.success,
+        data: result.output,
+        error: result.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        data: null,
+        error: `查看防御状态失败: ${error.message}`
+      };
     }
   }
 }

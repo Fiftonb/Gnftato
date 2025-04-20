@@ -641,4 +641,128 @@ exports.updateCacheItem = async (req, res) => {
       error: error.message
     });
   }
+};
+
+/**
+ * 配置DDoS防御规则
+ */
+exports.setupDdosProtection = async (req, res) => {
+  try {
+    const serverId = req.params.serverId;
+    
+    const result = await nftablesService.setupDdosProtection(serverId);
+    
+    res.status(result.success ? 200 : 400).json({
+      success: result.success,
+      data: result.data,
+      error: result.error
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '配置DDoS防御规则失败',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * 为自定义端口配置DDoS防御
+ */
+exports.setupCustomPortProtection = async (req, res) => {
+  try {
+    const serverId = req.params.serverId;
+    const { port, protoType, maxConn, maxRateMin, maxRateSec, banHours } = req.body;
+    
+    if (!port) {
+      return res.status(400).json({
+        success: false,
+        message: '端口不能为空'
+      });
+    }
+    
+    const result = await nftablesService.setupCustomPortProtection(
+      serverId, 
+      port, 
+      protoType || 1, 
+      maxConn || 400, 
+      maxRateMin || 400, 
+      maxRateSec || 300, 
+      banHours || 24
+    );
+    
+    res.status(result.success ? 200 : 400).json({
+      success: result.success,
+      data: result.data,
+      error: result.error
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '配置自定义端口DDoS防御失败',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * 管理IP黑白名单
+ */
+exports.manageIpLists = async (req, res) => {
+  try {
+    const serverId = req.params.serverId;
+    const { actionType, ip, duration } = req.body;
+    
+    console.log("[DEBUG] manageIpLists - 请求体:", req.body);
+    console.log(`[DEBUG] manageIpLists - 解构参数: actionType=${actionType}, ip=${ip}, duration=${duration}`);
+    
+    if (!actionType || !ip) {
+      return res.status(400).json({
+        success: false,
+        message: '操作类型和IP地址不能为空'
+      });
+    }
+    
+    const result = await nftablesService.manageIpLists(serverId, actionType, ip, duration);
+    
+    res.status(result.success ? 200 : 400).json({
+      success: result.success,
+      data: result.data,
+      error: result.error
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '管理IP黑白名单失败',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * 查看当前防御状态
+ */
+exports.viewDefenseStatus = async (req, res) => {
+  try {
+    const serverId = req.params.serverId;
+    
+    const result = await nftablesService.viewDefenseStatus(serverId);
+    
+    // 如果请求成功，更新缓存
+    if (result.success) {
+      await cacheService.updateServerCacheItem(serverId, 'defenseStatus', result.data);
+    }
+    
+    res.status(result.success ? 200 : 400).json({
+      success: result.success,
+      data: result.data,
+      error: result.error
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '查看防御状态失败',
+      error: error.message
+    });
+  }
 }; 

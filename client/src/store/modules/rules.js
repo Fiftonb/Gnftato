@@ -403,6 +403,77 @@ const actions = {
     } finally {
       commit('setLoading', false);
     }
+  },
+  
+  // 配置DDoS防御规则
+  async setupDdosProtection({ commit }, serverId) {
+    commit('setLoading', true);
+    commit('setError', null);
+    
+    try {
+      const response = await axios.post(`${API_URL}/${serverId}/ddos/protection`);
+      return response.data;
+    } catch (error) {
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    } finally {
+      commit('setLoading', false);
+    }
+  },
+  
+  // 配置自定义端口DDoS防御
+  async setupCustomPortProtection({ commit }, { serverId, data }) {
+    commit('setLoading', true);
+    commit('setError', null);
+    
+    try {
+      const response = await axios.post(`${API_URL}/${serverId}/ddos/custom-port`, data);
+      return response.data;
+    } catch (error) {
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    } finally {
+      commit('setLoading', false);
+    }
+  },
+  
+  // 管理IP黑白名单
+  async manageIpLists({ commit }, { serverId, data }) {
+    commit('setLoading', true);
+    commit('setError', null);
+    
+    console.log(`[Store调试] 开始manageIpLists请求: serverId=${serverId}`, data);
+    
+    try {
+      const endpoint = `${API_URL}/${serverId}/ddos/ip-lists`;
+      console.log(`[Store调试] 请求端点: ${endpoint}`);
+      
+      const response = await axios.post(endpoint, data);
+      console.log(`[Store调试] 收到响应:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`[Store调试] 请求错误:`, error);
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    } finally {
+      commit('setLoading', false);
+    }
+  },
+  
+  // 查看当前防御状态
+  async getDefenseStatus({ commit }, serverId) {
+    commit('setLoading', true);
+    commit('setError', null);
+    
+    try {
+      const response = await axios.get(`${API_URL}/${serverId}/ddos/status`);
+      return response.data;
+    } catch (error) {
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    } finally {
+      commit('setLoading', false);
+    }
   }
 };
 

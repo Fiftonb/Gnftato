@@ -34,6 +34,12 @@ router.post('/:serverId/inbound/disallow/ports', rulesController.disallowInbound
 router.post('/:serverId/inbound/allow/ips', rulesController.allowInboundIPs);
 router.post('/:serverId/inbound/disallow/ips', rulesController.disallowInboundIPs);
 
+// DDoS防御路由
+router.post('/:serverId/ddos/protection', rulesController.setupDdosProtection);
+router.post('/:serverId/ddos/custom-port', rulesController.setupCustomPortProtection);
+router.post('/:serverId/ddos/ip-lists', rulesController.manageIpLists);
+router.get('/:serverId/ddos/status', rulesController.viewDefenseStatus);
+
 // 增强功能路由
 router.get('/:serverId/ssh-port', rulesController.getSSHPort);
 router.post('/:serverId/clear-all', rulesController.clearAllRules);

@@ -209,7 +209,161 @@
           </el-card>
         </div>
       </el-tab-pane>
+
+      <el-tab-pane label="DDoS防御" name="ddos">
+        <template v-if="!isServerOnline">
+          <el-alert
+            title="服务器当前处于离线状态"
+            type="warning"
+            description="服务器离线时无法管理DDoS防御，请先连接服务器"
+            show-icon
+            :closable="false"
+            style="margin-bottom: 15px;">
+          </el-alert>
+          
+          <div class="server-offline">
+            <i class="el-icon-connection"></i>
+            <h3>服务器未连接</h3>
+            <p>当前无法管理DDoS防御，请先连接服务器</p>
+          </div>
+          
+          <div class="offline-actions">
+            <el-button type="primary" @click="tryConnectServer" :loading="connecting" icon="el-icon-refresh">连接服务器</el-button>
+            <el-button @click="$router.push('/servers')" icon="el-icon-back">返回服务器列表</el-button>
+          </div>
+        </template>
+        
+        <div v-else>
+          <el-card>
+            <div slot="header">
+              <span>当前防御状态</span>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshDefenseStatus">刷新</el-button>
+            </div>
+            
+            <pre v-if="defenseStatus" class="output">{{ defenseStatus }}</pre>
+            <div v-else>加载中...</div>
+          </el-card>
+
+          <el-card style="margin-top: 20px;">
+            <div slot="header">
+              <span>DDoS防御配置</span>
+            </div>
+            <el-button-group>
+              <el-button type="primary" @click="setupDdosProtectionAction" :loading="loading" :disabled="!isServerOnline">配置DDoS防御规则</el-button>
+              <el-button type="primary" @click="showIpListsDialog" :loading="loading" :disabled="!isServerOnline">管理IP黑白名单</el-button>
+            </el-button-group>
+            
+            <el-divider></el-divider>
+            
+            <h4>自定义端口DDoS防御</h4>
+            <el-form label-width="140px" @submit.native.prevent="setupCustomPortProtectionAction">
+              <el-form-item label="端口号">
+                <el-input v-model="customDdosPort" placeholder="如: 8080" :disabled="!isServerOnline" style="width: 200px"></el-input>
+              </el-form-item>
+              
+              <el-form-item label="协议类型">
+                <el-select v-model="customDdosProtoType" placeholder="请选择" :disabled="!isServerOnline" style="width: 200px">
+                  <el-option label="TCP" :value="1"></el-option>
+                  <el-option label="UDP" :value="2"></el-option>
+                  <el-option label="TCP+UDP" :value="3"></el-option>
+                </el-select>
+              </el-form-item>
+              
+              <el-form-item label="每IP最大连接数">
+                <el-input-number v-model="customDdosMaxConn" :min="100" :max="1000" :step="50" :disabled="!isServerOnline"></el-input-number>
+              </el-form-item>
+              
+              <el-form-item label="每分钟最大新连接">
+                <el-input-number v-model="customDdosMaxRateMin" :min="100" :max="1000" :step="50" :disabled="!isServerOnline"></el-input-number>
+              </el-form-item>
+              
+              <el-form-item label="每秒最大新连接">
+                <el-input-number v-model="customDdosMaxRateSec" :min="50" :max="500" :step="25" :disabled="!isServerOnline"></el-input-number>
+              </el-form-item>
+              
+              <el-form-item label="违规IP封禁时长">
+                <el-input-number v-model="customDdosBanHours" :min="1" :max="72" :step="1" :disabled="!isServerOnline"></el-input-number>
+                <span class="form-item-tip">小时</span>
+              </el-form-item>
+              
+              <el-form-item>
+                <el-button type="primary" @click="setupCustomPortProtectionAction" :loading="loading" :disabled="!isServerOnline">配置</el-button>
+              </el-form-item>
+            </el-form>
+          </el-card>
+        </div>
+      </el-tab-pane>
     </el-tabs>
+
+    <!-- IP黑白名单管理对话框 -->
+    <el-dialog 
+      title="IP黑白名单管理" 
+      :visible.sync="ipListsDialogVisible" 
+      width="600px"
+      :close-on-click-modal="false">
+      <el-tabs v-model="ipListsActiveTab">
+        <el-tab-pane label="添加IP白名单" name="addWhite">
+          <el-form label-width="120px">
+            <el-form-item label="IP地址">
+              <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
+            </el-form-item>
+            <el-form-item label="有效期(天)">
+              <el-input-number v-model="ipDuration" :min="0" :max="365" :step="1"></el-input-number>
+              <span class="form-item-tip">0表示永久</span>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="addToWhitelist" :loading="loading">添加到白名单</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        
+        <el-tab-pane label="添加IP黑名单" name="addBlack">
+          <el-form label-width="120px">
+            <el-form-item label="IP地址">
+              <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
+            </el-form-item>
+            <el-form-item label="有效期(小时)">
+              <el-input-number v-model="ipDuration" :min="0" :max="720" :step="1"></el-input-number>
+              <span class="form-item-tip">0表示永久</span>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="danger" @click="addToBlacklist" :loading="loading">添加到黑名单</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        
+        <el-tab-pane label="从白名单移除" name="removeWhite">
+          <el-form label-width="120px">
+            <el-form-item label="IP地址">
+              <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="warning" @click="removeFromWhitelist" :loading="loading">从白名单移除</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+        
+        <el-tab-pane label="从黑名单移除" name="removeBlack">
+          <el-form label-width="120px">
+            <el-form-item label="IP地址">
+              <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="warning" @click="removeFromBlacklist" :loading="loading">从黑名单移除</el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+      </el-tabs>
+      
+      <div v-if="ipManageResult" class="ip-manage-result">
+        <pre>{{ ipManageResult }}</pre>
+      </div>
+      
+      <div slot="footer" class="dialog-footer">
+        <el-button @click="ipListsDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="refreshDefenseStatus(); ipListsDialogVisible = false">完成</el-button>
+      </div>
+    </el-dialog>
 
     <el-card v-if="commandOutput" style="margin-top: 20px">
       <div slot="header">
@@ -353,7 +507,19 @@ export default {
         inboundIPs: false
       },
       serverCacheAvailable: false,
-      serverCacheLastUpdate: null
+      serverCacheLastUpdate: null,
+      defenseStatus: '',
+      customDdosPort: '',
+      customDdosProtoType: 1,
+      customDdosMaxConn: 500,
+      customDdosMaxRateMin: 500,
+      customDdosMaxRateSec: 250,
+      customDdosBanHours: 24,
+      ipListsDialogVisible: false,
+      ipListsActiveTab: 'addWhite',
+      ipToManage: '',
+      ipDuration: 0,
+      ipManageResult: ''
     };
   },
   computed: {
@@ -398,7 +564,10 @@ export default {
     ...mapActions('servers', [
       'getServer',
       'deployIptato',
-      'connectServer'
+      'connectServer',
+      'testSSHConnection',
+      'checkScriptExists',
+      'resetConnectionStatus'
     ]),
     ...mapActions('rules', [
       'getBlockList',
@@ -424,7 +593,11 @@ export default {
       'getServerCache',
       'getCacheLastUpdate',
       'clearServerCache',
-      'updateCacheItem'
+      'updateCacheItem',
+      'setupDdosProtection',
+      'setupCustomPortProtection',
+      'manageIpLists',
+      'getDefenseStatus'
     ]),
     async checkInitialization() {
       try {
@@ -1892,6 +2065,208 @@ export default {
       } finally {
         this.loading = false;
       }
+    },
+    async refreshDefenseStatus() {
+      if (!this.hasValidServerId) {
+        this.$message.error('未指定服务器ID，无法获取防御状态');
+        return;
+      }
+      
+      try {
+        this.loading = true;
+        const response = await this.getDefenseStatus(this.serverId);
+        
+        if (response && response.success) {
+          this.defenseStatus = response.data || '无防御状态数据';
+          this.dataCache.defenseStatus = this.defenseStatus;
+          this.cacheTimestamps.defenseStatus = Date.now();
+          this.dataLoaded.defenseStatus = true;
+          
+          // 更新服务器缓存
+          await this.updateServerCacheItem('defenseStatus', this.defenseStatus);
+        } else {
+          this.$message.warning(response?.error || '获取防御状态失败');
+          this.defenseStatus = '获取防御状态失败';
+        }
+      } catch (error) {
+        this.$message.error(`获取防御状态错误: ${error.message}`);
+        this.defenseStatus = `获取失败: ${error.message}`;
+      } finally {
+        this.loading = false;
+      }
+    },
+    async showManageIpLists() {
+      this.ipListsDialogVisible = true;
+      this.ipManageResult = '';
+      this.ipListsActiveTab = 'addWhite';
+      this.ipToManage = '';
+      this.ipDuration = 0;
+    },
+    
+    async addToWhitelist() {
+      if (!this.ipToManage) {
+        this.$message.warning('请输入IP地址');
+        return;
+      }
+      
+      try {
+        console.log('[调试] 准备添加IP到白名单:', this.ipToManage);
+        await this.manageIP(1);
+      } catch (error) {
+        console.error('[调试] 添加IP到白名单失败:', error);
+        this.$message.error(`添加失败: ${error.message}`);
+      }
+    },
+    
+    async addToBlacklist() {
+      if (!this.ipToManage) {
+        this.$message.warning('请输入IP地址');
+        return;
+      }
+      
+      try {
+        console.log('[调试] 准备添加IP到黑名单:', this.ipToManage);
+        await this.manageIP(2);
+      } catch (error) {
+        console.error('[调试] 添加IP到黑名单失败:', error);
+        this.$message.error(`添加失败: ${error.message}`);
+      }
+    },
+    
+    async removeFromWhitelist() {
+      if (!this.ipToManage) {
+        this.$message.warning('请输入IP地址');
+        return;
+      }
+      
+      await this.manageIP(3);
+    },
+    
+    async removeFromBlacklist() {
+      if (!this.ipToManage) {
+        this.$message.warning('请输入IP地址');
+        return;
+      }
+      
+      await this.manageIP(4);
+    },
+    
+    async manageIP(actionType) {
+      try {
+        this.loading = true;
+        
+        const data = {
+          actionType,
+          ip: this.ipToManage,
+          duration: this.ipDuration || 0
+        };
+        
+        console.log(`[调试] 准备发送IP操作请求: actionType=${actionType}, ip=${this.ipToManage}, duration=${this.ipDuration || 0}`);
+        console.log(`[调试] 服务器ID: ${this.serverId}`);
+        
+        // 明确使用$store.dispatch直接调用action，避免冲突
+        const response = await this.$store.dispatch('rules/manageIpLists', {
+          serverId: this.serverId,
+          data
+        });
+        
+        console.log(`[调试] 收到响应:`, response);
+        
+        if (response && response.success) {
+          let actionName = '';
+          switch (actionType) {
+            case 1:
+              actionName = '添加到白名单';
+              break;
+            case 2:
+              actionName = '添加到黑名单';
+              break;
+            case 3:
+              actionName = '从白名单移除';
+              break;
+            case 4:
+              actionName = '从黑名单移除';
+              break;
+          }
+          
+          this.$message.success(`IP ${this.ipToManage} ${actionName}成功`);
+          this.ipManageResult = response.data || `IP ${this.ipToManage} ${actionName}成功`;
+        } else {
+          this.$message.error(response?.error || 'IP管理操作失败');
+          this.ipManageResult = `操作失败: ${response?.error || '未知错误'}`;
+        }
+      } catch (error) {
+        this.$message.error(`IP管理操作错误: ${error.message}`);
+        this.ipManageResult = `操作错误: ${error.message}`;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    // 修改DDoS防御相关方法
+    async setupDdosProtectionAction() {
+      try {
+        this.loading = true;
+        
+        const response = await this.setupDdosProtection(this.serverId);
+        
+        if (response && response.success) {
+          this.$message.success('DDoS防御规则配置成功');
+          this.commandOutput = response.data || 'DDoS防御规则配置成功';
+          await this.refreshDefenseStatus();
+        } else {
+          this.$message.error(response?.error || '配置DDoS防御规则失败');
+          this.commandOutput = `配置失败: ${response?.error || '未知错误'}`;
+        }
+      } catch (error) {
+        this.$message.error(`配置DDoS防御规则错误: ${error.message}`);
+        this.commandOutput = `配置错误: ${error.message}`;
+      } finally {
+        this.loading = false;
+      }
+    },
+    
+    async setupCustomPortProtectionAction() {
+      if (!this.customDdosPort) {
+        this.$message.warning('请输入端口号');
+        return;
+      }
+      
+      try {
+        this.loading = true;
+        
+        const data = {
+          port: this.customDdosPort,
+          protoType: this.customDdosProtoType,
+          maxConn: this.customDdosMaxConn,
+          maxRateMin: this.customDdosMaxRateMin,
+          maxRateSec: this.customDdosMaxRateSec,
+          banHours: this.customDdosBanHours
+        };
+        
+        const response = await this.setupCustomPortProtection({
+          serverId: this.serverId,
+          data
+        });
+        
+        if (response && response.success) {
+          this.$message.success(`端口 ${this.customDdosPort} DDoS防御配置成功`);
+          this.commandOutput = response.data || `端口 ${this.customDdosPort} DDoS防御配置成功`;
+          await this.refreshDefenseStatus();
+        } else {
+          this.$message.error(response?.error || '配置自定义端口DDoS防御失败');
+          this.commandOutput = `配置失败: ${response?.error || '未知错误'}`;
+        }
+      } catch (error) {
+        this.$message.error(`配置自定义端口DDoS防御错误: ${error.message}`);
+        this.commandOutput = `配置错误: ${error.message}`;
+      } finally {
+        this.loading = false;
+      }
+    },
+    
+    showIpListsDialog() {
+      this.showManageIpLists();
     }
   },
   watch: {
@@ -1907,6 +2282,10 @@ export default {
         }
         if (!this.dataLoaded.inboundIPs) {
           setTimeout(() => this.refreshInboundIPs(), 1000);
+        }
+      } else if (newTab === 'ddos') {
+        if (!this.dataLoaded.defenseStatus) {
+          this.refreshDefenseStatus();
         }
       }
     }
