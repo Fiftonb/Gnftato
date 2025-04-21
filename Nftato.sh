@@ -54,18 +54,26 @@ XLLiveUD"
 check_system() {
     if [[ -f /etc/redhat-release ]]; then
         release="centos"
+        # CentOS特有的配置路径
+        if [ -f /etc/redhat-release ]; then
+            nft_centos_conf="/etc/sysconfig/nftables.conf"
+        fi
     elif cat /etc/issue | grep -q -E -i "debian"; then
         release="debian"
     elif cat /etc/issue | grep -q -E -i "ubuntu"; then
         release="ubuntu"
     elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
         release="centos"
+        # CentOS特有的配置路径
+        nft_centos_conf="/etc/sysconfig/nftables.conf"
     elif cat /proc/version | grep -q -E -i "debian"; then
         release="debian"
     elif cat /proc/version | grep -q -E -i "ubuntu"; then
         release="ubuntu"
     elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
         release="centos"
+        # CentOS特有的配置路径
+        nft_centos_conf="/etc/sysconfig/nftables.conf"
     fi
     bit=$(uname -m)
 }
@@ -235,12 +243,42 @@ install_nftables() {
             apt-get update
             apt-get install -y nftables
         elif [ "$release" == "centos" ]; then
-            yum install -y nftables
+            # CentOS 9使用dnf命令
+            if grep -q -E "9\." /etc/redhat-release; then
+                dnf install -y nftables
+            else
+                yum install -y nftables
+            fi
+            
+            # 确保CentOS目录结构存在
+            mkdir -p /etc/nftables
+            mkdir -p /etc/sysconfig
+            
+            # 关闭firewalld服务（如果存在）
+            if systemctl is-active firewalld &>/dev/null; then
+                systemctl stop firewalld
+                systemctl disable firewalld
+                echo "已禁用firewalld服务，使用nftables替代"
+            fi
         fi
     fi
     
     # 确保nftables服务启用
-    systemctl enable nftables
+    if [ "$release" == "centos" ]; then
+        # CentOS 9可能需要特殊处理
+        if grep -q -E "9\." /etc/redhat-release 2>/dev/null; then
+            # 查看服务是否存在
+            if systemctl list-unit-files | grep -q nftables.service; then
+                systemctl enable nftables
+            else
+                echo "警告: 未找到nftables服务，请手动检查"
+            fi
+        else
+            systemctl enable nftables
+        fi
+    else
+        systemctl enable nftables
+    fi
     
     echo "nftables安装完成"
 }
@@ -447,21 +485,47 @@ save_nftables_rules() {
     # 保存到配置文件
     nft list ruleset > $nft_ruleset
     
-    # 创建nftables配置文件
-    cat > $nft_conf <<EOF
+    # 为CentOS特别处理
+    if [ "$release" == "centos" ]; then
+        # 确保/etc/sysconfig目录存在
+        mkdir -p /etc/sysconfig
+        
+        # 创建CentOS特定的nftables配置文件
+        cat > /etc/sysconfig/nftables.conf <<EOF
+# 加载主规则文件
+include "$nft_ruleset"
+EOF
+        chmod 600 /etc/sysconfig/nftables.conf
+        # 还原SELinux上下文（如果存在）
+        if command -v restorecon &>/dev/null; then
+            restorecon -v /etc/sysconfig/nftables.conf || true
+        fi
+    else
+        # 其他发行版的处理
+        # 创建nftables配置文件
+        cat > $nft_conf <<EOF
 #!/usr/sbin/nft -f
 
 flush ruleset
 
 include "$nft_ruleset"
 EOF
+    fi
     
     # 确保权限正确
-    chmod 644 $nft_conf
     chmod 644 $nft_ruleset
     
     # 启用nftables服务
-    systemctl restart nftables
+    if [ "$release" == "centos" ]; then
+        # CentOS特定服务重启方式
+        if systemctl is-active nftables &>/dev/null; then
+            systemctl restart nftables
+        else
+            systemctl start nftables
+        fi
+    else
+        systemctl restart nftables
+    fi
     systemctl enable nftables
     
     echo "nftables规则保存完成"
