@@ -218,8 +218,12 @@ wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato
 ./Nftato.sh
 ```
 
-## 功能简介
-### 适配系统
-Debian\Centos\Ubuntu
+## 免责声明
+
+* 此项目开发目的为本人自用，因此本人不能保证向后兼容性。
+* 由于本人能力有限，不能保证所有功能的可用性，如果出现问题请在Issues反馈。
+* 本人不对任何人使用本项目造成的任何后果承担责任。
+* 本人比较多变，因此本项目可能会随想法或思路的变动随性更改项目结构或大规模重构代码，若不能接受请勿使用。
+
 
 
