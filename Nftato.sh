@@ -2265,7 +2265,6 @@ non_interactive_ip_list_manage() {
 
 # 主菜单显示函数
 show_main_menu() {
-    clear
     echo && echo -e " nftables防火墙 管理脚本 ${Red_font_prefix}[v${sh_ver}]${Font_color_suffix}
   -- 参考iPtato.sh脚本实现 --
   -- 使用nftables --
