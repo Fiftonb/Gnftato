@@ -25,6 +25,10 @@ keywords_file="/etc/nftables/keywords.list"
 USE_IPTABLES_FOR_KEYWORDS=0  # 是否使用iptables进行关键词过滤
 USE_FILE_ONLY=0  # 是否只使用文件记录而不实际过滤
 
+# 模块加载尝试次数和超时设置
+MAX_MODULE_LOAD_ATTEMPTS=3
+MODULE_LOAD_TIMEOUT=5
+
 # 端口配置
 smtp_port="25,26,465,587"
 pop3_port="109,110,995"
@@ -124,7 +128,25 @@ set_environment() {
     disable_conflicting_firewalls
     install_nftables
     install_tool
-    install_nftables_modules
+    
+    # 在加载模块前先检查内核版本和支持情况
+    check_kernel_support
+    
+    # 尝试加载模块，根据结果调整策略
+    load_modules_result=0
+    install_nftables_modules || load_modules_result=$?
+    
+    # 如果加载失败，根据错误码采取不同措施
+    if [ $load_modules_result -ne 0 ]; then
+        echo "警告: 加载nftables模块遇到问题(代码:$load_modules_result)，采用备选方案"
+        if [ $load_modules_result -eq 2 ]; then
+            echo "系统不支持nft_string模块，将使用iptables进行关键词过滤"
+            USE_IPTABLES_FOR_KEYWORDS=1
+        elif [ $load_modules_result -ge 3 ]; then
+            echo "无法加载任何字符串匹配模块，将仅记录而不过滤关键词"
+            USE_FILE_ONLY=1
+        fi
+    fi
     
     # 对iptables进行基本配置
     if [[ $USE_IPTABLES_FOR_KEYWORDS -eq 1 ]]; then
@@ -135,26 +157,27 @@ set_environment() {
         
         # 如果需要，配置iptables服务
         if [ "$release" == "centos" ] && command -v systemctl &>/dev/null; then
-            systemctl enable iptables
-            systemctl start iptables
+            systemctl enable iptables 2>/dev/null || echo "无法启用iptables服务，将继续"
+            systemctl start iptables 2>/dev/null || echo "无法启动iptables服务，将继续"
         fi
         
         # 清除所有现有规则
-        iptables -F
-        iptables -X
-        iptables -t nat -F
-        iptables -t nat -X
-        iptables -t mangle -F
-        iptables -t mangle -X
-        iptables -P INPUT ACCEPT
-        iptables -P FORWARD ACCEPT
-        iptables -P OUTPUT ACCEPT
+        iptables -F 2>/dev/null || echo "无法清空iptables规则"
+        iptables -X 2>/dev/null
+        iptables -t nat -F 2>/dev/null
+        iptables -t nat -X 2>/dev/null
+        iptables -t mangle -F 2>/dev/null
+        iptables -t mangle -X 2>/dev/null
+        iptables -P INPUT ACCEPT 2>/dev/null
+        iptables -P FORWARD ACCEPT 2>/dev/null
+        iptables -P OUTPUT ACCEPT 2>/dev/null
         
         # 保存初始状态
         if [ "$release" == "debian" ] || [ "$release" == "ubuntu" ]; then
-            iptables-save > /etc/iptables/rules.v4
+            iptables-save > /etc/iptables/rules.v4 2>/dev/null || echo "无法保存iptables规则"
             
             # 创建自动加载脚本
+            mkdir -p /etc/network/if-pre-up.d
             cat > /etc/network/if-pre-up.d/iptables <<-EOF
 #!/bin/bash
 /sbin/iptables-restore < /etc/iptables/rules.v4
@@ -163,10 +186,10 @@ EOF
             chmod +x /etc/network/if-pre-up.d/iptables
         elif [ "$release" == "centos" ]; then
             if command -v service &>/dev/null; then
-                service iptables save
+                service iptables save 2>/dev/null || echo "无法通过service保存iptables规则"
             else
                 mkdir -p /etc/sysconfig
-                iptables-save > /etc/sysconfig/iptables
+                iptables-save > /etc/sysconfig/iptables 2>/dev/null || echo "无法保存iptables规则到/etc/sysconfig"
             fi
         fi
     fi
@@ -235,14 +258,36 @@ install_nftables() {
             apt-get update
             apt-get install -y nftables
         elif [ "$release" == "centos" ]; then
-            yum install -y nftables
+            if command -v dnf &>/dev/null; then
+                dnf install -y nftables
+            else
+                yum install -y nftables
+            fi
         fi
     fi
     
     # 确保nftables服务启用
-    systemctl enable nftables
+    if command -v systemctl &>/dev/null; then
+        systemctl enable nftables 2>/dev/null || echo "警告: 无法启用nftables服务，这可能是正常现象"
+    elif command -v chkconfig &>/dev/null; then
+        chkconfig nftables on 2>/dev/null || echo "警告: 无法启用nftables服务，这可能是正常现象"
+    fi
     
     echo "nftables安装完成"
+    
+    # 创建基本配置目录
+    mkdir -p /etc/nftables
+    
+    # 创建基本配置文件，如果不存在
+    if [ ! -f "/etc/nftables.conf" ]; then
+        echo '#!/usr/sbin/nft -f' > /etc/nftables.conf
+        echo 'flush ruleset' >> /etc/nftables.conf
+        echo 'include "/etc/nftables/ruleset.nft"' >> /etc/nftables.conf
+        chmod 644 /etc/nftables.conf
+    fi
+    
+    # 创建空的规则集文件
+    touch /etc/nftables/ruleset.nft
 }
 
 # 安装网络工具
@@ -259,102 +304,171 @@ install_tool() {
     fi
 }
 
+# 检查内核对nftables模块的支持情况
+check_kernel_support() {
+    echo "检查内核对nftables的支持情况..."
+    
+    # 获取内核版本
+    kernel_version=$(uname -r)
+    echo "当前内核版本: $kernel_version"
+    
+    # 检查是否有模块加载功能
+    if ! command -v modprobe &>/dev/null; then
+        echo "警告: 系统不支持modprobe命令，无法加载内核模块"
+        return 1
+    fi
+    
+    # 检查/lib/modules目录是否存在且包含当前内核版本
+    if [ ! -d "/lib/modules/$kernel_version" ]; then
+        echo "警告: 未找到当前内核($kernel_version)的模块目录"
+        if [ -d "/lib/modules" ]; then
+            echo "可用内核模块目录:"
+            ls -l /lib/modules/
+        fi
+        return 1
+    fi
+    
+    # 检查是否有modinfo命令
+    if command -v modinfo &>/dev/null; then
+        # 检查nf_tables模块信息
+        if ! modinfo nf_tables &>/dev/null; then
+            echo "警告: 内核不支持nf_tables模块"
+        fi
+        
+        # 检查nft_string模块信息
+        if ! modinfo nft_string &>/dev/null; then
+            echo "警告: 内核不支持nft_string模块"
+        fi
+    fi
+    
+    return 0
+}
+
+# 加载必要的内核模块
+load_kernel_module() {
+    local module_name=$1
+    local attempt=1
+    local max_attempts=${2:-$MAX_MODULE_LOAD_ATTEMPTS}
+    
+    echo "尝试加载模块: $module_name"
+    
+    while [ $attempt -le $max_attempts ]; do
+        echo "尝试 $attempt/$max_attempts..."
+        
+        if modprobe $module_name 2>/dev/null; then
+            echo "成功加载模块: $module_name"
+            return 0
+        else
+            echo "第$attempt次加载模块 $module_name 失败"
+            attempt=$((attempt+1))
+            sleep 1
+        fi
+    done
+    
+    echo "警告: 无法加载模块 $module_name 经过 $max_attempts 次尝试"
+    return 1
+}
+
 # 安装nftables字符串匹配模块和其他必要模块
 install_nftables_modules() {
     echo "检查并安装nftables字符串匹配所需的模块..."
     
     # 测试string匹配是否可用
-    if ! nft -e 'add rule inet filter input tcp string match "test" drop' &>/dev/null; then
-        echo "nftables string匹配模块不可用，尝试安装所需模块..."
-        
-        # 检查当前已加载的模块
-        if ! lsmod | grep -q "nft_string"; then
-            echo "尝试加载nft_string模块..."
-            modprobe nft_string || echo "无法直接加载nft_string模块，将尝试安装"
-        fi
-        
-        # 根据发行版安装所需包
-        if [ "$release" == "debian" ] || [ "$release" == "ubuntu" ]; then
-            echo "安装Debian/Ubuntu所需包..."
-            apt-get update
-            apt-get install -y linux-modules-extra-$(uname -r) || echo "未找到额外模块包，尝试安装扩展包"
-            apt-get install -y kmod xtables-addons-common xtables-addons-dkms
-            
-            # 如果内核版本较旧，尝试dkms方式
-            if ! lsmod | grep -q "nft_string"; then
-                echo "尝试通过dkms方式安装模块..."
-                apt-get install -y dkms linux-headers-$(uname -r)
-            fi
-            
-        elif [ "$release" == "centos" ]; then
-            echo "安装CentOS所需包..."
-            yum install -y kernel-modules-extra || echo "未找到额外模块包，尝试单独安装"
-            yum install -y kmod-xtables-addons xtables-addons
-            
-            # 安装必要的开发工具，以便编译模块
-            yum groupinstall -y "Development Tools"
-            yum install -y kernel-devel-$(uname -r)
-        fi
-        
-        # 尝试再次加载模块
-        echo "尝试加载内核模块..."
-        modprobe nf_tables
-        modprobe nft_counter
-        modprobe nf_tables_set
-        
-        # 特别尝试加载string模块
-        modprobe nft_string || echo "警告: 无法加载nft_string模块"
-        
-        # 检查是否成功加载
-        if lsmod | grep -q "nft_string"; then
-            echo "nft_string模块已成功加载"
-            # 确保使用nftables的string模块
-            USE_IPTABLES_FOR_KEYWORDS=0
-            USE_FILE_ONLY=0
-        else
-            echo "警告: nft_string模块未能加载，将使用备选的关键词过滤方法"
-            
-            # 尝试加载iptables的string模块作为备选
-            echo "尝试加载iptables xt_string模块作为备选..."
-            modprobe xt_string
-            
-            if lsmod | grep -q "xt_string"; then
-                echo "xt_string模块已加载，将使用iptables进行关键词过滤"
-                # 确保iptables可用
-                if ! command -v iptables &>/dev/null; then
-                    echo "安装iptables..."
-                    if [ "$release" == "debian" ] || [ "$release" == "ubuntu" ]; then
-                        apt-get install -y iptables iptables-persistent
-                    elif [ "$release" == "centos" ]; then
-                        yum install -y iptables iptables-services
-                        systemctl enable iptables
-                        systemctl start iptables
-                    fi
-                fi
-                
-                # 设置全局变量标记使用iptables
-                USE_IPTABLES_FOR_KEYWORDS=1
-                USE_FILE_ONLY=0
-                
-                # 确保iptables规则目录存在
-                if [ "$release" == "debian" ] || [ "$release" == "ubuntu" ]; then
-                    mkdir -p /etc/iptables
-                fi
-            else
-                echo "警告: 所有string匹配模块都无法加载，将使用文件记录方式"
-                USE_IPTABLES_FOR_KEYWORDS=0
-                USE_FILE_ONLY=1
-            fi
-        fi
-    else
+    if nft -e 'add rule inet filter input tcp string match "test" drop' &>/dev/null; then
         echo "nftables字符串匹配模块已可用"
         USE_IPTABLES_FOR_KEYWORDS=0
         USE_FILE_ONLY=0
+        return 0
+    fi
+    
+    echo "nftables string匹配模块不可用，尝试安装所需模块..."
+    
+    # 加载基础nftables模块
+    load_kernel_module nf_tables || echo "警告: 无法加载nf_tables基础模块"
+    load_kernel_module nft_counter || echo "警告: 无法加载nft_counter模块"
+    
+    # 尝试加载nft_string模块
+    if load_kernel_module nft_string; then
+        echo "成功加载nft_string模块"
+        
+        # 重新测试string匹配是否可用
+        if nft -e 'add rule inet filter input tcp string match "test" drop' &>/dev/null; then
+            echo "nftables字符串匹配功能已可用"
+            USE_IPTABLES_FOR_KEYWORDS=0
+            USE_FILE_ONLY=0
+            return 0
+        else
+            echo "虽然加载了nft_string模块，但string匹配功能仍不可用"
+        fi
+    fi
+    
+    # 尝试安装所需的软件包
+    if [ "$release" == "debian" ] || [ "$release" == "ubuntu" ]; then
+        echo "安装Debian/Ubuntu所需包..."
+        apt-get update
+        apt-get install -y linux-modules-extra-$(uname -r) || echo "未找到额外模块包"
+        apt-get install -y kmod xtables-addons-common xtables-addons-dkms
+    elif [ "$release" == "centos" ]; then
+        echo "安装CentOS所需包..."
+        if command -v dnf &>/dev/null; then
+            # CentOS 8/9 使用dnf
+            dnf install -y kernel-modules-extra || echo "未找到额外模块包"
+            dnf install -y kmod-xtables-addons xtables-addons || echo "无法安装xtables附加组件"
+        else
+            # CentOS 7 使用yum
+            yum install -y kernel-modules-extra || echo "未找到额外模块包"
+            yum install -y kmod-xtables-addons xtables-addons || echo "无法安装xtables附加组件"
+        fi
+    fi
+    
+    # 再次尝试加载nft_string模块
+    if load_kernel_module nft_string; then
+        echo "成功加载nft_string模块"
+        
+        # 重新测试string匹配是否可用
+        if nft -e 'add rule inet filter input tcp string match "test" drop' &>/dev/null; then
+            echo "nftables字符串匹配功能已可用"
+            USE_IPTABLES_FOR_KEYWORDS=0
+            USE_FILE_ONLY=0
+            return 0
+        fi
+    fi
+    
+    # 如果无法使用nftables的string模块，尝试iptables的string模块
+    echo "尝试加载iptables xt_string模块作为备选..."
+    if load_kernel_module xt_string; then
+        echo "xt_string模块已加载，将使用iptables进行关键词过滤"
+        
+        # 确保iptables可用
+        if ! command -v iptables &>/dev/null; then
+            echo "安装iptables..."
+            if [ "$release" == "debian" ] || [ "$release" == "ubuntu" ]; then
+                apt-get install -y iptables iptables-persistent
+            elif [ "$release" == "centos" ]; then
+                if command -v dnf &>/dev/null; then
+                    dnf install -y iptables iptables-services
+                else
+                    yum install -y iptables iptables-services
+                fi
+            fi
+        fi
+        
+        # 设置使用iptables进行关键词过滤
+        USE_IPTABLES_FOR_KEYWORDS=1
+        USE_FILE_ONLY=0
+        return 2  # 特殊返回值，表示使用iptables
+    else
+        echo "警告: 所有string匹配模块都无法加载，将使用文件记录方式"
+        USE_IPTABLES_FOR_KEYWORDS=0
+        USE_FILE_ONLY=1
+        return 3  # 特殊返回值，表示使用文件记录
     fi
 }
 
 # 设置nftables基础结构
 setup_nftables_base() {
+    echo "=== 设置nftables基础结构 ==="
+    
     # 创建目录
     mkdir -p /etc/nftables
     mkdir -p /etc/iptables
@@ -362,54 +476,226 @@ setup_nftables_base() {
     # 确保关键词文件存在
     touch "$keywords_file"
     
+    # 查看nftables可用性
+    if ! command -v nft &>/dev/null; then
+        echo "错误: nft命令不可用，重新安装nftables..."
+        install_nftables
+        if ! command -v nft &>/dev/null; then
+            echo "严重错误: 无法安装nftables，系统可能不支持"
+            echo "将尝试继续运行，但功能可能受限"
+        fi
+    fi
+    
     # 清空现有nftables规则
-    nft flush ruleset
+    nft flush ruleset 2>/dev/null || echo "无法清空nftables规则集，可能是nftables尚未初始化"
     
     # 若使用iptables清空filter和nat表规则，但保留mangle表的规则（用于关键词过滤）
     if command -v iptables &>/dev/null; then
-        iptables -F
-        iptables -X
-        iptables -t nat -F
-        iptables -t nat -X
+        echo "清理现有iptables规则..."
+        iptables -F 2>/dev/null || echo "无法清空iptables过滤表"
+        iptables -X 2>/dev/null || echo "无法删除iptables自定义链"
+        iptables -t nat -F 2>/dev/null || echo "无法清空iptables NAT表"
+        iptables -t nat -X 2>/dev/null || echo "无法删除iptables NAT自定义链"
         # 不清空mangle表，因为它可能包含关键词过滤规则
-        iptables -P INPUT ACCEPT
-        iptables -P FORWARD ACCEPT
-        iptables -P OUTPUT ACCEPT
+        iptables -P INPUT ACCEPT 2>/dev/null || echo "无法设置iptables INPUT链默认策略"
+        iptables -P FORWARD ACCEPT 2>/dev/null || echo "无法设置iptables FORWARD链默认策略"
+        iptables -P OUTPUT ACCEPT 2>/dev/null || echo "无法设置iptables OUTPUT链默认策略"
     fi
     
-    # 创建基本表和链
-    nft add table inet filter
+    # 创建规则之前先验证是否支持nftables表和链
+    if ! nft add table inet filter 2>/dev/null; then
+        echo "错误: 无法创建filter表，尝试不同的语法"
+        
+        # 尝试使用不同的表名
+        if nft add table ip filter 2>/dev/null; then
+            echo "成功创建ip filter表，请注意这可能会影响IPv6功能"
+            USING_IP_TABLE=true
+        else
+            echo "严重错误: 无法创建任何表，nftables可能不受支持"
+            echo "脚本将继续运行，但防火墙功能可能无法正常工作"
+            return 1
+        fi
+    else
+        USING_IP_TABLE=false
+    fi
     
-    # 创建input链
-    nft add chain inet filter input { type filter hook input priority 0\; policy drop\; }
+    # 根据表类型创建链
+    if [ "$USING_IP_TABLE" = true ]; then
+        # 使用ip表创建链
+        create_chain_safely ip filter input "input" "drop"
+        create_chain_safely ip filter output "output" "accept" 
+        create_chain_safely ip filter forward "forward" "drop"
+        
+        # 尝试创建mangle表
+        if nft add table ip mangle 2>/dev/null; then
+            create_chain_safely ip mangle prerouting "prerouting" "accept" "-150"
+            create_chain_safely ip mangle output "output" "accept" "-150"
+        fi
+    else
+        # 使用inet表创建链
+        create_chain_safely inet filter input "input" "drop"
+        create_chain_safely inet filter output "output" "accept"
+        create_chain_safely inet filter forward "forward" "drop"
+        
+        # 尝试创建mangle表
+        if nft add table inet mangle 2>/dev/null; then
+            create_chain_safely inet mangle prerouting "prerouting" "accept" "-150"
+            create_chain_safely inet mangle output "output" "accept" "-150"
+        fi
+    fi
     
-    # 创建output链
-    nft add chain inet filter output { type filter hook output priority 0\; policy accept\; }
+    # 验证input链是否创建成功
+    if ! nft list chain inet filter input &>/dev/null && ! nft list chain ip filter input &>/dev/null; then
+        echo "严重错误: 无法创建input链，防火墙功能将不可用"
+        echo "请检查系统对nftables的支持情况"
+        return 1
+    fi
     
-    # 创建forward链
-    nft add chain inet filter forward { type filter hook forward priority 0\; policy drop\; }
-    
-    # 创建mangle表用于非关键词过滤的mangle操作
-    nft add table inet mangle
-    nft add chain inet mangle prerouting { type filter hook prerouting priority -150\; }
-    nft add chain inet mangle output { type filter hook output priority -150\; }
+    # 添加基本规则前缀(表名和链名)
+    if [ "$USING_IP_TABLE" = true ]; then
+        TABLE_PREFIX="ip filter"
+    else
+        TABLE_PREFIX="inet filter"
+    fi
     
     # 添加基本规则
     # 允许已建立连接和相关流量
-    nft add rule inet filter input ct state established,related accept
+    nft add rule $TABLE_PREFIX input ct state established,related accept 2>/dev/null || 
+    echo "无法添加established连接规则"
     
     # 允许本地回环接口
-    nft add rule inet filter input iifname "lo" accept
+    nft add rule $TABLE_PREFIX input iifname "lo" accept 2>/dev/null || 
+    echo "无法添加本地接口规则"
     
     # 允许ICMP
-    nft add rule inet filter input ip protocol icmp accept
-    nft add rule inet filter input ip6 nexthdr icmpv6 accept
+    if [ "$USING_IP_TABLE" = true ]; then
+        nft add rule ip filter input ip protocol icmp accept 2>/dev/null || 
+        echo "无法添加ICMP规则"
+    else
+        nft add rule inet filter input ip protocol icmp accept 2>/dev/null || 
+        echo "无法添加ICMP规则"
+        nft add rule inet filter input ip6 nexthdr icmpv6 accept 2>/dev/null || 
+        echo "无法添加ICMPv6规则"
+    fi
     
     # TTL匹配（等效于iptables的TTL匹配）
-    nft add rule inet filter input ip ttl gt 80 accept
+    nft add rule $TABLE_PREFIX input ip ttl gt 80 accept 2>/dev/null || 
+    echo "无法添加TTL规则"
     
     # 保存规则
     save_nftables_rules
+    
+    echo "nftables基础结构设置完成"
+}
+
+# 安全地创建nftables链
+create_chain_safely() {
+    local table_name=$1
+    local chain_name=$2
+    local hook_name=$3
+    local policy=$4
+    local priority=${5:-0}
+    
+    echo "创建链: $table_name $chain_name"
+    
+    # 尝试带分号转义的语法
+    if ! nft add chain $table_name $chain_name { type filter hook $hook_name priority $priority\; policy $policy\; } 2>/dev/null; then
+        # 尝试不带分号转义的语法
+        if ! nft add chain $table_name $chain_name { type filter hook $hook_name priority $priority \; policy $policy \; } 2>/dev/null; then
+            # 尝试旧版语法
+            if ! nft "add chain $table_name $chain_name { type filter hook $hook_name priority $priority; policy $policy; }" 2>/dev/null; then
+                echo "无法创建链 $table_name $chain_name，尝试不指定类型"
+                # 尝试不指定类型的基本链创建
+                nft add chain $table_name $chain_name 2>/dev/null || 
+                echo "严重错误: 无法创建链 $table_name $chain_name"
+                return 1
+            fi
+        fi
+    fi
+    
+    return 0
+}
+
+# 重新设计的存储规则函数，增强了错误处理
+save_nftables_rules() {
+    echo "正在保存nftables规则..."
+    
+    # 创建目录（如果不存在）
+    mkdir -p /etc/nftables
+    
+    # 确保我们可以访问nftables
+    if ! command -v nft &>/dev/null; then
+        echo "错误: nft命令不可用，无法保存规则"
+        return 1
+    fi
+    
+    # 验证nftables是否有规则集
+    if ! nft list tables &>/dev/null; then
+        echo "警告: 无法列出表，nftables可能未初始化或不支持"
+        return 1
+    fi
+    
+    # 尝试获取并保存规则集
+    if nft list ruleset &>/dev/null; then
+        # 将规则集保存到临时文件
+        TMP_RULESET=$(mktemp)
+        nft list ruleset > "$TMP_RULESET" 2>/dev/null
+        
+        # 检查临时文件是否为空
+        if [ -s "$TMP_RULESET" ]; then
+            # 将临时文件复制到实际位置
+            cp "$TMP_RULESET" "$nft_ruleset" && 
+            echo "规则集成功保存到 $nft_ruleset" ||
+            echo "无法将规则集写入 $nft_ruleset"
+        else
+            echo "警告: 获取的规则集为空，可能是nftables未正确初始化"
+            echo "将创建基本的空规则集文件"
+            echo "# Empty ruleset - generated by Nftato.sh" > "$nft_ruleset"
+        fi
+        
+        # 删除临时文件
+        rm -f "$TMP_RULESET"
+    else
+        echo "警告: 无法获取规则集，将创建基本的空规则集文件"
+        echo "# Empty ruleset - generated by Nftato.sh" > "$nft_ruleset"
+    fi
+    
+    # 创建nftables配置文件
+    cat > $nft_conf <<EOF
+#!/usr/sbin/nft -f
+# Generated by Nftato.sh
+
+flush ruleset
+
+include "$nft_ruleset"
+EOF
+    
+    # 确保权限正确
+    chmod 644 $nft_conf 2>/dev/null || echo "无法设置 $nft_conf 权限"
+    chmod 644 $nft_ruleset 2>/dev/null || echo "无法设置 $nft_ruleset 权限"
+    
+    # 尝试启用nftables服务
+    if command -v systemctl &>/dev/null; then
+        systemctl restart nftables 2>/dev/null && echo "nftables服务已重启" || 
+        echo "警告: 无法重启nftables服务，可能需要手动设置"
+        
+        systemctl enable nftables 2>/dev/null && echo "nftables服务已设置为开机启动" || 
+        echo "警告: 无法设置nftables开机启动，可能需要手动设置"
+    elif command -v service &>/dev/null; then
+        service nftables restart 2>/dev/null && echo "nftables服务已重启" || 
+        echo "警告: 无法重启nftables服务，可能需要手动设置"
+        
+        if command -v chkconfig &>/dev/null; then
+            chkconfig nftables on 2>/dev/null && echo "nftables服务已设置为开机启动" || 
+            echo "警告: 无法设置nftables开机启动，可能需要手动设置"
+        fi
+    else
+        echo "警告: 找不到systemctl或service命令，无法管理nftables服务"
+        echo "您可能需要手动启动nftables服务或设置开机启动"
+    fi
+    
+    echo "nftables规则保存完成"
+    return 0
 }
 
 # 获取SSH端口
@@ -424,47 +710,76 @@ get_ssh_port() {
 able_ssh_port() {
     s="add"
     get_ssh_port
-    # 清除可能存在的旧规则
-    nft -a list chain inet filter input | grep "tcp dport $PORT" | while read -r line; do
+    
+    # 首先检查表和链是否存在
+    if nft list tables 2>/dev/null | grep -q "table inet filter"; then
+        TABLE_PREFIX="inet filter"
+    elif nft list tables 2>/dev/null | grep -q "table ip filter"; then
+        TABLE_PREFIX="ip filter"
+    else
+        echo "错误: 未找到filter表，创建基础结构"
+        setup_nftables_base
+        
+        # 再次检查表是否存在
+        if nft list tables 2>/dev/null | grep -q "table inet filter"; then
+            TABLE_PREFIX="inet filter"
+        elif nft list tables 2>/dev/null | grep -q "table ip filter"; then
+            TABLE_PREFIX="ip filter"
+        else
+            echo "严重错误: 仍然无法找到filter表，无法继续"
+            return 1
+        fi
+    fi
+    
+    # 检查input链是否存在
+    if ! nft list chain $TABLE_PREFIX input &>/dev/null; then
+        echo "错误: input链不存在，创建基础结构"
+        setup_nftables_base
+        
+        # 再次检查链是否存在
+        if ! nft list chain $TABLE_PREFIX input &>/dev/null; then
+            echo "严重错误: 仍然无法找到input链，无法继续"
+            return 1
+        fi
+    fi
+    
+    # 清除可能存在的旧SSH规则
+    nft -a list chain $TABLE_PREFIX input 2>/dev/null | grep "dport $PORT" | while read -r line; do
         handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
         if [ -n "$handle" ]; then
-            nft delete rule inet filter input handle $handle
+            nft delete rule $TABLE_PREFIX input handle $handle 2>/dev/null || 
+            echo "无法删除旧规则，继续处理"
         fi
     done
     
-    # 添加新规则
-    nft add rule inet filter input tcp dport $PORT accept comment \"shellsettcp\"
-    nft add rule inet filter input udp dport $PORT accept comment \"shellsetudp\"
+    # 尝试添加SSH规则，首先尝试带注释
+    if ! nft add rule $TABLE_PREFIX input tcp dport $PORT accept comment \"shellsettcp\" 2>/dev/null; then
+        # 如果添加带注释的规则失败，尝试不带注释
+        echo "无法添加带注释的TCP规则，尝试不带注释"
+        if ! nft add rule $TABLE_PREFIX input tcp dport $PORT accept 2>/dev/null; then
+            echo "严重错误: 无法添加SSH TCP规则"
+        else
+            echo "已放行SSH TCP端口 $PORT (无注释)"
+        fi
+    else
+        echo "已放行SSH TCP端口 $PORT"
+    fi
     
-    echo "已放行SSH端口 $PORT"
+    # 尝试添加UDP规则
+    if ! nft add rule $TABLE_PREFIX input udp dport $PORT accept comment \"shellsetudp\" 2>/dev/null; then
+        # 如果添加带注释的规则失败，尝试不带注释
+        echo "无法添加带注释的UDP规则，尝试不带注释"
+        if ! nft add rule $TABLE_PREFIX input udp dport $PORT accept 2>/dev/null; then
+            echo "警告: 无法添加SSH UDP规则"
+        else
+            echo "已放行SSH UDP端口 $PORT (无注释)"
+        fi
+    else
+        echo "已放行SSH UDP端口 $PORT"
+    fi
+    
+    # 保存规则
     save_nftables_rules
-}
-
-# 保存nftables规则
-save_nftables_rules() {
-    echo "正在保存nftables规则..."
-    
-    # 保存到配置文件
-    nft list ruleset > $nft_ruleset
-    
-    # 创建nftables配置文件
-    cat > $nft_conf <<EOF
-#!/usr/sbin/nft -f
-
-flush ruleset
-
-include "$nft_ruleset"
-EOF
-    
-    # 确保权限正确
-    chmod 644 $nft_conf
-    chmod 644 $nft_ruleset
-    
-    # 启用nftables服务
-    systemctl restart nftables
-    systemctl enable nftables
-    
-    echo "nftables规则保存完成"
 }
 
 # 显示SSH端口信息
