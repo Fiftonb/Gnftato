@@ -149,9 +149,7 @@
               <span>封禁管理</span>
             </div>
             <el-button-group>
-              <el-button type="primary" @click="blockBTPT" :loading="loading" :disabled="!isServerOnline">封禁BT/PT</el-button>
               <el-button type="primary" @click="blockSPAM" :loading="loading" :disabled="!isServerOnline">封禁SPAM</el-button>
-              <el-button type="primary" @click="blockAll" :loading="loading" :disabled="!isServerOnline">封禁全部</el-button>
             </el-button-group>
             
             <el-divider></el-divider>
@@ -164,15 +162,6 @@
                 <el-button type="warning" @click="blockCustomPorts" :loading="loading" :disabled="!isServerOnline">封禁</el-button>
               </el-form-item>
             </el-form>
-            
-            <el-form :inline="true" @submit.native.prevent="blockCustomKeyword">
-              <el-form-item label="自定义关键词">
-                <el-input v-model="customKeyword" placeholder="如: youtube.com" :disabled="!isServerOnline"></el-input>
-              </el-form-item>
-              <el-form-item>
-                <el-button type="warning" @click="blockCustomKeyword" :loading="loading" :disabled="!isServerOnline">封禁</el-button>
-              </el-form-item>
-            </el-form>
           </el-card>
 
           <el-card style="margin-top: 20px;">
@@ -180,9 +169,7 @@
               <span>解封管理</span>
             </div>
             <el-button-group>
-              <el-button type="success" @click="unblockBTPT" :loading="loading" :disabled="!isServerOnline">解封BT/PT</el-button>
               <el-button type="success" @click="unblockSPAM" :loading="loading" :disabled="!isServerOnline">解封SPAM</el-button>
-              <el-button type="success" @click="unblockAll" :loading="loading" :disabled="!isServerOnline">解封全部</el-button>
             </el-button-group>
             
             <el-divider></el-divider>
@@ -195,17 +182,6 @@
                 <el-button type="success" @click="unblockCustomPorts" :loading="loading" :disabled="!isServerOnline">解封</el-button>
               </el-form-item>
             </el-form>
-            
-            <el-form :inline="true" @submit.native.prevent="unblockCustomKeyword">
-              <el-form-item label="自定义关键词">
-                <el-input v-model="customUnblockKeyword" placeholder="如: youtube.com" :disabled="!isServerOnline"></el-input>
-              </el-form-item>
-              <el-form-item>
-                <el-button type="success" @click="unblockCustomKeyword" :loading="loading" :disabled="!isServerOnline">解封</el-button>
-              </el-form-item>
-            </el-form>
-            
-            <el-button type="success" @click="unblockAllKeywords" :loading="loading" :disabled="!isServerOnline">解封所有关键词</el-button>
           </el-card>
         </div>
       </el-tab-pane>

@@ -691,11 +691,12 @@ class SSHService {
    * 在服务器上执行Nftato脚本命令
    * @param {string} serverId - 服务器ID
    * @param {string|number} action - 要执行的操作代码
+   * @param {string} params - 额外的参数，如端口或IP等
    * @returns {Promise<object>} - 执行结果
    */
-  async executeNftato(serverId, action) {
+  async executeNftato(serverId, action, params = '') {
     try {
-      console.log(`[诊断] 准备执行Nftato脚本，服务器ID: ${serverId}, 动作: ${action}`);
+      console.log(`[诊断] 准备执行Nftato脚本，服务器ID: ${serverId}, 动作: ${action}${params ? ', 参数: ' + params : ''}`);
       
       // 首先检查连接状态
       if (!this.checkConnection(serverId)) {
@@ -744,7 +745,7 @@ class SSHService {
         }
 
         // 执行脚本命令
-        const command = `bash ${scriptPath} ${action}`;
+        const command = params ? `bash ${scriptPath} ${action} ${params}` : `bash ${scriptPath} ${action}`;
         console.log(`[诊断] 执行脚本命令: ${command}`);
         const result = await this.executeCommand(serverId, command);
         console.log(`[诊断] 脚本执行完成，退出码: ${result.code}`);

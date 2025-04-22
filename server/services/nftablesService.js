@@ -551,19 +551,42 @@ class NftablesService {
    */
   async disallowInboundPorts(serverId, ports) {
     try {
+      console.log(`[详细日志] 开始执行disallowInboundPorts，服务器ID: ${serverId}，端口: ${ports}`);
+      
       // 检查前置条件
       const prereqCheck = await this._checkPrerequisites(serverId);
       if (!prereqCheck.success) {
+        console.log(`[详细日志] 前置条件检查失败: ${prereqCheck.error}`);
         return prereqCheck;
       }
       
+      // 确保ports是字符串类型
+      const portsStr = String(ports || '');
+      if (!portsStr.trim()) {
+        console.log(`[详细日志] 端口参数为空`);
+        return {
+          success: false,
+          error: '端口参数不能为空'
+        };
+      }
+      
+      console.log(`[详细日志] 转换后的端口参数: ${portsStr}`);
+      
       // 检查是否是SSH端口
       try {
-        // 获取服务器信息，包括SSH端口
-        const serverModel = require('../models/Server');
-        const server = await serverModel.findById(serverId);
+        // 从服务器JSON文件直接读取信息，而不是通过模型查询数据库
+        const fs = require('fs');
+        const path = require('path');
+        const serversFilePath = path.join(__dirname, '../data/servers.json');
+        
+        console.log(`[详细日志] 读取服务器文件: ${serversFilePath}`);
+        
+        // 读取JSON文件
+        const serversData = JSON.parse(fs.readFileSync(serversFilePath, 'utf8'));
+        const server = serversData.servers.find(s => s._id === serverId);
         
         if (!server) {
+          console.log(`[详细日志] 未找到服务器信息，ID: ${serverId}`);
           return {
             success: false,
             error: '服务器不存在'
@@ -572,47 +595,82 @@ class NftablesService {
         
         // 获取当前SSH端口
         let sshPort = server.port || 22;
+        console.log(`[详细日志] 服务器SSH端口: ${sshPort}`);
         
-        // 检查端口列表中是否包含SSH端口
-        const portList = ports.split(',').map(p => {
-          // 处理可能的端口范围，如 8080-8090
-          if (p.includes('-')) {
-            const [start, end] = p.split('-').map(Number);
-            return Array.from({length: end - start + 1}, (_, i) => start + i);
+        // 检查端口列表中是否包含SSH端口 - 使用转换后的字符串
+        const portSegments = portsStr.split(',');
+        
+        console.log(`[详细日志] 分割后的端口段数量: ${portSegments.length}`);
+        
+        // 高效检查SSH端口是否在任何端口段中
+        for (const segment of portSegments) {
+          const trimmedSegment = segment.trim();
+          console.log(`[详细日志] 检查端口段: ${trimmedSegment}`);
+          
+          if (trimmedSegment.includes('-')) {
+            // 处理端口范围
+            const [start, end] = trimmedSegment.split('-').map(Number);
+            console.log(`[详细日志] 端口范围: ${start}-${end}, SSH端口: ${sshPort}`);
+            if (sshPort >= start && sshPort <= end) {
+              console.log(`[详细日志] SSH端口在端口范围内，拒绝操作`);
+              return {
+                success: false,
+                error: `不能取消SSH端口(${sshPort})的放行，这将导致无法连接服务器`
+              };
+            }
+          } else {
+            // 处理单个端口
+            const port = parseInt(trimmedSegment, 10);
+            console.log(`[详细日志] 单个端口: ${port}, SSH端口: ${sshPort}`);
+            if (port === sshPort) {
+              console.log(`[详细日志] 匹配SSH端口，拒绝操作`);
+              return {
+                success: false,
+                error: `不能取消SSH端口(${sshPort})的放行，这将导致无法连接服务器`
+              };
+            }
           }
-          return parseInt(p.trim(), 10);
-        }).flat();
-        
-        // 如果要禁用的端口包含SSH端口，拒绝操作
-        if (portList.includes(sshPort)) {
-          return {
-            success: false,
-            error: `不能取消SSH端口(${sshPort})的放行，这将导致无法连接服务器`
-          };
         }
         
-        // 检查端口范围是否包含SSH端口
-        for (const port of portList) {
-          if (port === sshPort) {
-            return {
-              success: false,
-              error: `不能取消SSH端口(${sshPort})的放行，这将导致无法连接服务器`
-            };
-          }
-        }
+        console.log(`[详细日志] SSH端口检查通过，继续执行`);
       } catch (checkError) {
         console.error(`检查SSH端口出错: ${checkError.message}`);
+        console.error(`错误堆栈: ${checkError.stack}`);
         // 出错时继续执行，但记录日志
       }
       
-      const result = await sshService.executeNftato(serverId, 62, ports);
+      console.log(`[详细日志] 准备执行executeNftato命令，动作: 16, 参数: ${portsStr}`);
       
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
+      // 设置执行超时
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('执行命令超时')), 30000); // 30秒超时
+      });
+      
+      try {
+        // 使用Promise.race实现超时机制
+        const result = await Promise.race([
+          sshService.executeNftato(serverId, 16, portsStr),
+          timeoutPromise
+        ]);
+        
+        console.log(`[详细日志] 命令执行完成，结果: ${JSON.stringify(result)}`);
+        
+        return {
+          success: result.success,
+          data: result.output,
+          error: result.error
+        };
+      } catch (timeoutError) {
+        console.error(`[详细日志] 命令执行超时: ${timeoutError.message}`);
+        return {
+          success: false,
+          data: null,
+          error: `取消放行入网端口操作超时，请检查服务器连接或重试`
+        };
+      }
     } catch (error) {
+      console.error(`取消放行入网端口失败: ${error.message}`);
+      console.error(`错误堆栈: ${error.stack}`);
       return {
         success: false,
         data: null,

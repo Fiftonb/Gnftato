@@ -255,6 +255,9 @@ export default {
         // 如果未检测到服务器重启，也执行一次在线服务器状态验证
         await this.verifyOnlineServersStatus();
       }
+      
+      // 添加自动修复，修正服务器状态不一致问题
+      this.autoFixInconsistentStatus();
     }, 1000);
   },
   beforeDestroy() {
@@ -569,10 +572,59 @@ export default {
       // 再次确认服务器状态，防止状态不一致
       try {
         this.$set(this.checkingServers, server._id, true);
+        
+        // 先获取日志信息判断实际连接状态
+        let logBasedStatus = null;
+        try {
+          const logResponse = await this.getServerLogs(server._id);
+          if (logResponse && logResponse.data) {
+            const logs = logResponse.data;
+            
+            // 通过日志判断实际连接状态
+            if (logs.includes('SSH连接建立成功') || 
+                logs.includes('服务器已连接且连接有效') ||
+                logs.includes('连接套接字正常')) {
+              
+              console.log('状态验证：日志显示服务器实际已连接');
+              logBasedStatus = 'online';
+            }
+          }
+        } catch (error) {
+          console.error('获取日志失败:', error);
+        }
+        
+        // 如果日志已确认在线状态，直接使用
+        if (logBasedStatus === 'online') {
+          // 更新服务器状态
+          const index = this.servers.findIndex(s => s._id === server._id);
+          if (index !== -1 && this.servers[index].status !== 'online') {
+            this.$set(this.servers[index], 'status', 'online');
+            this.$set(this.servers[index], 'lastChecked', Date.now());
+            this.$delete(this.errorReasons, server._id);
+          }
+          
+          return 'online';
+        }
+        
+        // 如果日志未能确认状态，通过API再次确认
         const response = await this.checkStatus(server._id);
         const actualStatus = response.data.data.status;
+        const backendConnected = response.data.data.backendConnected || false;
         
-        // 如果显示状态与实际状态不一致，更新状态
+        // 如果API返回连接正常，使用正常状态
+        if (actualStatus === 'online' || backendConnected) {
+          // 更新服务器状态
+          const index = this.servers.findIndex(s => s._id === server._id);
+          if (index !== -1 && this.servers[index].status !== 'online') {
+            this.$set(this.servers[index], 'status', 'online');
+            this.$set(this.servers[index], 'lastChecked', Date.now());
+            this.$delete(this.errorReasons, server._id);
+          }
+          
+          return 'online';
+        }
+        
+        // 如果API显示非在线状态，更新本地状态
         const index = this.servers.findIndex(s => s._id === server._id);
         if (index !== -1 && this.servers[index].status !== actualStatus) {
           this.$set(this.servers[index], 'status', actualStatus);
@@ -783,10 +835,80 @@ export default {
       }
     },
     async handleManageRules(server) {
-      // 连接前预检，确保服务器实际在线
-      const actualStatus = await this.verifyServerStatus(server);
+      // 首先检查UI状态，如果已经是在线状态直接跳转
+      if (server.status === 'online') {
+        this.$router.push({ name: 'rules', params: { serverId: server._id } });
+        return;
+      }
       
-      if (actualStatus !== 'online') {
+      // 连接前预检，确保服务器实际在线状态
+      try {
+        // 显示检查状态的加载提示
+        this.$set(this.checkingServers, server._id, true);
+        
+        // 1. 先检查服务器日志，看实际连接状态
+        let isActuallyConnected = false;
+        try {
+          const logResponse = await this.getServerLogs(server._id);
+          if (logResponse && logResponse.data) {
+            const logs = logResponse.data;
+            
+            // 通过日志判断实际连接状态
+            if (logs.includes('SSH连接建立成功') || 
+                logs.includes('服务器已连接且连接有效') ||
+                logs.includes('连接套接字正常')) {
+              
+              console.log('管理规则前检查：日志显示服务器实际已连接');
+              isActuallyConnected = true;
+              
+              // 自动修复状态不一致
+              const index = this.servers.findIndex(s => s._id === server._id);
+              if (index !== -1 && this.servers[index].status !== 'online') {
+                this.$set(this.servers[index], 'status', 'online');
+                this.$set(this.servers[index], 'lastChecked', Date.now());
+                this.$delete(this.errorReasons, server._id);
+                
+                // 显示已自动修复状态的提示
+                this.$message.info(`服务器 ${server.name} 实际已连接，状态已修复`);
+                
+                // 延迟跳转，给用户一点时间看到状态修复提示
+                setTimeout(() => {
+                  this.$router.push({ name: 'rules', params: { serverId: server._id } });
+                }, 500);
+                return;
+              }
+            }
+          }
+        } catch (error) {
+          console.error('管理规则前获取日志失败:', error);
+        }
+        
+        // 如果日志显示已连接，直接前往规则管理
+        if (isActuallyConnected) {
+          this.$router.push({ name: 'rules', params: { serverId: server._id } });
+          return;
+        }
+        
+        // 2. 再通过API检查当前状态
+        const statusResponse = await this.checkStatus(server._id);
+        const actualStatus = statusResponse?.data?.data?.status || 'error';
+        const backendConnected = statusResponse?.data?.data?.backendConnected || false;
+        
+        // 如果API返回连接正常，更新状态并跳转
+        if (actualStatus === 'online' || backendConnected) {
+          // 更新服务器状态
+          const index = this.servers.findIndex(s => s._id === server._id);
+          if (index !== -1) {
+            this.$set(this.servers[index], 'status', 'online');
+            this.$set(this.servers[index], 'lastChecked', Date.now());
+          }
+          
+          // 直接跳转到规则管理
+          this.$router.push({ name: 'rules', params: { serverId: server._id } });
+          return;
+        }
+        
+        // 如果确实未连接，询问用户是否连接
         const errorReason = this.errorReasons[server._id] || '服务器当前不在线';
         
         this.$confirm(`${errorReason}，需要先连接服务器吗?`, '提示', {
@@ -795,13 +917,26 @@ export default {
           type: 'warning'
         }).then(() => {
           this.handleConnect(server).then(() => {
+            // 连接成功后跳转
             this.$router.push({ name: 'rules', params: { serverId: server._id } });
           });
         }).catch(() => {});
-        return;
+      } catch (error) {
+        console.error('检查服务器状态失败:', error);
+        
+        // 出错时显示连接提示
+        this.$confirm(`无法确认服务器状态，是否尝试连接后再管理?`, '提示', {
+          confirmButtonText: '连接并管理',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }).then(() => {
+          this.handleConnect(server).then(() => {
+            this.$router.push({ name: 'rules', params: { serverId: server._id } });
+          });
+        }).catch(() => {});
+      } finally {
+        this.$set(this.checkingServers, server._id, false);
       }
-      
-      this.$router.push({ name: 'rules', params: { serverId: server._id } });
     },
     async checkServerStatus(server) {
       try {
@@ -892,6 +1027,29 @@ export default {
         clearInterval(this.heartbeatIntervals[server._id]);
       }
       
+      // 初始状态检查 - 确保开始心跳前服务器已经正确连接
+      setTimeout(async () => {
+        try {
+          // 先验证一次服务器状态
+          const statusResult = await this.checkStatus(server._id);
+          if (statusResult && statusResult.data && statusResult.data.status === 'error') {
+            // 如果状态是错误，但有日志显示连接实际有效
+            if (statusResult.logs && 
+               (statusResult.logs.includes('连接套接字正常') || 
+                statusResult.logs.includes('SSH连接已就绪') || 
+                statusResult.logs.includes('SSH连接建立成功'))) {
+              console.log('心跳初始检查：连接实际有效，修复状态');
+              const index = this.servers.findIndex(s => s._id === server._id);
+              if (index !== -1) {
+                this.$set(this.servers[index], 'status', 'online');
+              }
+            }
+          }
+        } catch (error) {
+          console.error('初始心跳检查失败:', error);
+        }
+      }, 2000);
+      
       // 每10秒发送一次心跳
       this.heartbeatIntervals[server._id] = setInterval(async () => {
         if (!server || server.status !== 'online') {
@@ -911,7 +1069,21 @@ export default {
             await this.handleHeartbeatFailure(server);
           }
         } catch (error) {
-          // 心跳发送失败，可能是连接断开
+          // 心跳发送失败，但尝试验证连接是否仍然有效
+          try {
+            const statusResponse = await this.checkStatus(server._id);
+            // 如果状态检查返回在线或连接有效，则不标记为失败
+            if (statusResponse && statusResponse.data && 
+                (statusResponse.data.status === 'online' || 
+                 statusResponse.data.backendConnected)) {
+              console.log('心跳失败但状态检查显示连接有效，跳过失败处理');
+              return;
+            }
+          } catch (checkError) {
+            console.error('心跳失败后状态检查失败:', checkError);
+          }
+          
+          // 状态检查也失败，处理心跳失败
           await this.handleHeartbeatFailure(server);
         }
       }, 10000);
@@ -930,7 +1102,39 @@ export default {
       const index = this.servers.findIndex(s => s._id === server._id);
       if (index === -1) return;
       
-      // 如果当前状态显示为在线，但心跳失败，则可能是服务器重启或故障
+      // 获取服务器日志检查真实连接状态
+      try {
+        const logResponse = await this.getServerLogs(server._id);
+        
+        // 如果日志表明连接实际是有效的，则不改变状态
+        if (logResponse && logResponse.data) {
+          const logs = logResponse.data;
+          
+          if (logs.includes('SSH连接建立成功') || 
+              logs.includes('服务器已连接且连接有效') ||
+              logs.includes('连接套接字正常')) {
+                
+            console.log('日志显示连接实际有效，保持在线状态');
+            
+            // 如果当前状态不是在线，则更新为在线
+            if (this.servers[index].status !== 'online') {
+              this.$set(this.servers[index], 'status', 'online');
+              this.$set(this.servers[index], 'lastChecked', Date.now());
+              this.$delete(this.errorReasons, server._id);
+              
+              // 显示状态修复通知
+              this.$message.info(`服务器 ${server.name} 状态已自动修复为在线`);
+            }
+            
+            // 心跳失败但连接有效，可能是临时网络抖动，不进行处理
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('获取服务器日志失败:', error);
+      }
+      
+      // 如果无法确认实际状态或确实无效，则执行原有逻辑
       if (this.servers[index].status === 'online') {
         // 更新服务器状态为错误
         this.$set(this.servers[index], 'status', 'error');
@@ -1169,6 +1373,52 @@ export default {
         // 增加延迟，确保后端状态已更新
         await new Promise(resolve => setTimeout(resolve, 1000));
         
+        // 先获取日志信息以判断实际连接状态
+        let logBasedStatus = null;
+        try {
+          const logResponse = await this.getServerLogs(server._id);
+          if (logResponse && logResponse.data) {
+            const logs = logResponse.data;
+            
+            if (logs.includes('SSH连接建立成功') || 
+                logs.includes('服务器已连接且连接有效') ||
+                logs.includes('连接套接字正常')) {
+              logBasedStatus = 'online';
+              console.log('日志显示连接实际有效');
+            }
+          }
+        } catch (error) {
+          console.error('获取服务器日志失败:', error);
+        }
+        
+        // 如果日志已确认连接有效，直接使用
+        if (logBasedStatus === 'online') {
+          const index = this.servers.findIndex(s => s._id === server._id);
+          if (index !== -1) {
+            const oldStatus = this.servers[index].status;
+            this.$set(this.servers[index], 'status', 'online');
+            this.$set(this.servers[index], 'lastChecked', Date.now());
+            
+            if (oldStatus !== 'online') {
+              this.$set(this.servers[index], 'statusChanged', true);
+              this.$delete(this.errorReasons, server._id);
+              
+              // 启动心跳检测
+              this.startHeartbeat(this.servers[index]);
+              
+              // 2秒后移除高亮效果
+              setTimeout(() => {
+                this.$set(this.servers[index], 'statusChanged', false);
+              }, 2000);
+              
+              this.$message.success(`服务器 ${server.name} 实际连接正常，状态已更新为在线`);
+            }
+            
+            this.saveStatesToCache();
+            return 'online';
+          }
+        }
+        
         // 至少尝试3次检查，确保获取到最新状态
         let actualStatus = 'error';
         let retryCount = 0;
@@ -1182,7 +1432,8 @@ export default {
               
               // 如果状态是error，但后端日志表明连接可能实际成功
               // 此时尝试强制修正状态
-              if (actualStatus === 'error' && response.data.data.backendConnected) {
+              if (actualStatus === 'error' && 
+                 (response.data.data.backendConnected || logBasedStatus === 'online')) {
                 console.log('后端连接实际有效，强制更新状态为在线');
                 actualStatus = 'online';
                 break;
@@ -1201,21 +1452,6 @@ export default {
           if (retryCount < maxRetries) {
             // 在重试之间等待
             await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-        }
-        
-        // 最后一次尝试：如果仍然为错误状态，检查是否有后端日志表明连接实际成功
-        if (actualStatus === 'error') {
-          try {
-            const logResponse = await this.getServerLogs(server._id);
-            if (logResponse && logResponse.data && 
-                (logResponse.data.includes('连接成功') || 
-                 logResponse.data.includes('连接有效'))) {
-              console.log('根据日志判断连接实际有效，强制更新状态');
-              actualStatus = 'online';
-            }
-          } catch (error) {
-            console.error('获取服务器日志失败:', error);
           }
         }
         
@@ -1339,6 +1575,85 @@ export default {
         console.error('获取服务器日志失败:', error);
         this.$message.error('获取服务器日志失败: ' + error.message);
       }
+    },
+    // 自动修复状态不一致问题
+    async autoFixInconsistentStatus() {
+      console.log('开始检查并自动修复状态不一致问题...');
+      
+      // 错误状态服务器优先检查
+      const errorServers = this.servers.filter(s => s.status === 'error');
+      for (const server of errorServers) {
+        try {
+          console.log(`检查错误状态服务器: ${server.name}`);
+          
+          // 获取服务器日志
+          const logResponse = await this.getServerLogs(server._id);
+          
+          if (logResponse && logResponse.data) {
+            const logs = logResponse.data;
+            
+            // 检查是否有连接实际成功的日志
+            if (logs.includes('SSH连接建立成功') || 
+                logs.includes('服务器已连接且连接有效') ||
+                logs.includes('连接套接字正常')) {
+              
+              console.log(`服务器 ${server.name} 状态显示错误，但日志表明连接有效，自动修复`);
+              
+              // 更新状态为在线
+              const index = this.servers.findIndex(s => s._id === server._id);
+              if (index !== -1) {
+                this.$set(this.servers[index], 'status', 'online');
+                this.$set(this.servers[index], 'lastChecked', Date.now());
+                this.$delete(this.errorReasons, server._id);
+                
+                // 启动心跳检测
+                this.startHeartbeat(this.servers[index]);
+                
+                // 显示通知
+                this.$message.success(`已自动修复服务器 ${server.name} 的状态为在线`);
+              }
+            }
+          }
+        } catch (error) {
+          console.error(`自动修复 ${server.name} 状态失败:`, error);
+        }
+      }
+      
+      // 检查状态为离线但实际在线的服务器
+      const offlineServers = this.servers.filter(s => s.status === 'offline');
+      for (const server of offlineServers) {
+        try {
+          console.log(`检查离线状态服务器: ${server.name}`);
+          
+          // 检查实际状态
+          const statusResponse = await this.checkStatus(server._id);
+          
+          if (statusResponse && statusResponse.data && 
+              (statusResponse.data.status === 'online' || 
+               statusResponse.data.backendConnected)) {
+            
+            console.log(`服务器 ${server.name} 状态显示离线，但实际连接有效，自动修复`);
+            
+            // 更新状态为在线
+            const index = this.servers.findIndex(s => s._id === server._id);
+            if (index !== -1) {
+              this.$set(this.servers[index], 'status', 'online');
+              this.$set(this.servers[index], 'lastChecked', Date.now());
+              
+              // 启动心跳检测
+              this.startHeartbeat(this.servers[index]);
+              
+              // 显示通知
+              this.$message.success(`已自动修复服务器 ${server.name} 的状态为在线`);
+            }
+          }
+        } catch (error) {
+          console.error(`检查 ${server.name} 实际状态失败:`, error);
+        }
+      }
+      
+      // 保存修复后的状态
+      this.saveStatesToCache();
     }
   }
 };

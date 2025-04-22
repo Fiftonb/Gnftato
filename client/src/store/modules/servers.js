@@ -148,14 +148,30 @@ const actions = {
     
     try {
       const response = await axios.get(`${API_URL}/${id}/status`);
-      if (response.data && response.data.data && response.data.data.status) {
-        commit('updateServerStatus', {
-          id,
-          status: response.data.data.status,
-          lastCheck: new Date().toISOString(),
-          backendConnected: response.data.data.backendConnected || false
-        });
+      
+      // 处理连接套接字正常但状态未知的情况
+      if (response.data && response.data.data) {
+        // 检查日志信息
+        if (response.data.logs && 
+            (response.data.logs.includes('连接套接字正常') || 
+             response.data.logs.includes('SSH连接已就绪') || 
+             response.data.logs.includes('SSH连接建立成功'))) {
+          // 覆盖状态为online
+          response.data.data.status = 'online';
+          response.data.data.backendConnected = true;
+        }
+        
+        // 更新服务器状态
+        if (response.data.data.status) {
+          commit('updateServerStatus', {
+            id,
+            status: response.data.data.status,
+            lastCheck: new Date().toISOString(),
+            backendConnected: response.data.data.backendConnected || false
+          });
+        }
       }
+      
       return response.data;
     } catch (error) {
       commit('setError', error.response ? error.response.data.message : error.message);
