@@ -581,137 +581,130 @@ class SSHService {
   }
 
   /**
-   * 在服务器上部署Nftato脚本
-   * @param {string} serverId - 服务器ID
-   * @param {function} [progressCallback] - 实时进度回调函数，用于WebSocket推送进度
-   * @returns {Promise<object>} - 执行结果
+   * 使用WebSocket实时日志输出部署Nftato脚本
+   * @param {string} serverId 服务器ID
+   * @param {function} logCallback 日志回调函数，用于发送实时日志
+   * @returns {Promise<object>} 部署结果
    */
-  async deployIptato(serverId, progressCallback = null) {
+  async deployIptatoWithLogs(serverId, logCallback = () => {}) {
     try {
-      // 查找服务器信息，用于日志记录
+      // 发送连接日志
+      logCallback('正在连接服务器...', 'log');
+      
+      // 获取服务器信息 - 使用正确的Server模型
       const server = await Server.findById(serverId);
+      
       if (!server) {
-        console.error(`服务器不存在，ID: ${serverId}`);
-        throw new Error('服务器未找到');
+        logCallback('找不到服务器信息', 'error');
+        return { success: false, error: '找不到服务器信息' };
       }
       
-      const logProgress = (message) => {
-        console.log(message);
-        // 如果提供了回调函数，则推送进度信息
-        if (typeof progressCallback === 'function') {
-          progressCallback({
-            type: 'log',
-            message: message
+      // 检查服务器状态
+      if (server.status !== 'online') {
+        logCallback('服务器当前离线，无法部署脚本', 'error');
+        return { success: false, error: '服务器当前离线，无法部署脚本' };
+      }
+      
+      // 使用已有的连接方法建立SSH连接
+      logCallback('正在建立SSH连接...', 'log');
+      const connection = await this.connect(serverId);
+      
+      if (!connection) {
+        logCallback('无法连接到服务器', 'error');
+        return { success: false, error: '无法连接到服务器' };
+      }
+      
+      // 连接成功
+      logCallback('SSH连接成功', 'success');
+      
+      // 检查脚本是否已存在
+      logCallback('正在检查脚本是否已存在...', 'log');
+      const checkScriptResult = await this.executeCommand(serverId, 'test -f /root/Nftato.sh && echo "exists" || echo "not_found"');
+      
+      if (checkScriptResult.stdout.trim() === 'exists') {
+        logCallback('脚本已存在，直接使用现有脚本', 'success');
+        
+        // 检查脚本是否可执行
+        const checkExecResult = await this.executeCommand(serverId, 'test -x /root/Nftato.sh && echo "executable" || echo "not_executable"');
+        
+        if (checkExecResult.stdout.trim() !== 'executable') {
+          logCallback('脚本存在但不可执行，正在设置执行权限...', 'log');
+          await this.executeCommand(serverId, 'chmod +x /root/Nftato.sh');
+        }
+        
+        return { success: true, message: '脚本已存在且可执行' };
+      }
+      
+      // 下载脚本
+      logCallback('开始下载Nftato脚本...', 'log');
+      
+      // 构建部署命令
+      const deployCommands = [
+        'cd ~',
+        'wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh',
+        'chmod +x Nftato.sh',
+        './Nftato.sh --help || echo "Script executed with errors"'
+      ];
+      
+      // 执行每个命令并实时输出日志
+      for (const cmd of deployCommands) {
+        logCallback(`执行命令: ${cmd}`, 'log');
+        
+        const result = await this.executeCommand(serverId, cmd, (line) => {
+          logCallback(line, 'log');
+        });
+        
+        // 记录命令输出
+        if (result.stdout) {
+          const lines = result.stdout.split('\n');
+          lines.forEach(line => {
+            if (line.trim()) {
+              logCallback(line.trim(), 'log');
+            }
           });
         }
-      };
+        
+        if (result.stderr) {
+          const lines = result.stderr.split('\n');
+          lines.forEach(line => {
+            if (line.trim()) {
+              logCallback(line.trim(), 'error');
+            }
+          });
+        }
+        
+        if (result.code !== 0) {
+          logCallback(`命令执行失败: ${cmd}`, 'error');
+          return { success: false, error: `部署命令失败: ${cmd}` };
+        }
+      }
       
-      logProgress(`开始在服务器 ${server.name} (${server.host}) 上部署Nftato脚本`);
+      // 验证部署结果
+      logCallback('正在验证脚本安装结果...', 'log');
       
-      // 检查用户是否有root权限
-      logProgress(`检查用户权限...`);
-      const checkSudo = await this.executeCommand(serverId, 'sudo -n true 2>/dev/null && echo "has_sudo" || echo "no_sudo"');
-      const hasSudo = checkSudo.stdout.includes('has_sudo');
-      logProgress(`用户${hasSudo ? '有' : '没有'}sudo权限`);
+      const verifyResult = await this.executeCommand(serverId, 'test -f ~/Nftato.sh && echo "success" || echo "failed"');
       
-      // 首先检测网络环境
-      logProgress(`检测网络环境...`);
-      const checkNetworkCommand = 'ping -c2 -i0.3 -W1 www.google.com &>/dev/null && echo "global" || echo "china"';
-      logProgress(`执行命令: ${checkNetworkCommand}`);
-      
-      const networkEnv = await this.executeCommand(serverId, checkNetworkCommand);
-      let downloadUrl = '';
-      
-      // 根据网络环境选择下载URL
-      if (networkEnv.stdout.includes('china')) {
-        logProgress('检测到国内网络环境，使用代理下载...');
-        downloadUrl = 'https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh';
+      if (verifyResult.stdout.trim() === 'success') {
+        logCallback('Nftato脚本已成功部署！', 'success');
+        
+        // 复制到root目录
+        logCallback('正在复制脚本到root目录...', 'log');
+        await this.executeCommand(serverId, 'sudo cp ~/Nftato.sh /root/Nftato.sh 2>/dev/null || echo "无法复制到root目录"');
+        
+        // 更新服务器缓存
+        logCallback('正在更新服务器配置...', 'log');
+        const cacheService = require('./cacheService');
+        await cacheService.clearServerCache(serverId);
+        
+        logCallback('部署完成', 'success');
+        return { success: true, message: '脚本部署成功' };
       } else {
-        logProgress('检测到可直接访问国际网络，使用原始URL下载...');
-        downloadUrl = 'https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh';
+        logCallback('脚本部署验证失败', 'error');
+        return { success: false, error: '脚本部署验证失败' };
       }
-      
-      // 构建下载命令，添加重试机制
-      const downloadCommand = `cd ~ && wget -N --no-check-certificate --tries=3 --timeout=15 ${downloadUrl} -O Nftato.sh && chmod +x Nftato.sh`;
-      logProgress(`开始下载脚本: ${downloadCommand}`);
-      
-      // 执行下载命令
-      logProgress(`正在下载脚本文件...`);
-      const result = await this.executeCommand(serverId, downloadCommand);
-      
-      if (result.code !== 0) {
-        logProgress(`下载脚本时发生错误，退出码: ${result.code}`);
-        logProgress(`标准错误: ${result.stderr}`);
-        
-        // 如果失败，尝试使用备用URL
-        logProgress('尝试使用备用方法下载...');
-        const fallbackCommand = networkEnv.stdout.includes('china') 
-          ? `cd ~ && curl -o Nftato.sh https://cdn.jsdelivr.net/gh/Fiftonb/Gnftato@main/Nftato.sh && chmod +x Nftato.sh`
-          : `cd ~ && curl -o Nftato.sh https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh && chmod +x Nftato.sh`;
-          
-        logProgress(`执行备用下载命令: ${fallbackCommand}`);
-        const fallbackResult = await this.executeCommand(serverId, fallbackCommand);
-        
-        if (fallbackResult.code !== 0) {
-          logProgress(`备用下载也失败，退出码: ${fallbackResult.code}`);
-          logProgress(`标准错误: ${fallbackResult.stderr}`);
-          throw new Error(`下载脚本失败: ${fallbackResult.stderr || '未知错误'}`);
-        }
-      }
-      
-      // 验证脚本是否下载成功到用户目录
-      logProgress(`验证脚本下载...`);
-      const checkResult = await this.executeCommand(serverId, 'test -f ~/Nftato.sh && echo "exists" || echo "not found"');
-      if (checkResult.stdout.includes('not found')) {
-        logProgress(`脚本下载验证失败，找不到脚本文件`);
-        throw new Error('脚本文件未成功下载到用户目录');
-      }
-      
-      logProgress(`脚本已成功下载到用户目录`);
-      
-      // 如果有sudo权限，也复制到/root/目录
-      if (hasSudo) {
-        logProgress(`尝试将脚本复制到/root/目录`);
-        await this.executeCommand(serverId, 'sudo cp ~/Nftato.sh /root/Nftato.sh && sudo chmod +x /root/Nftato.sh');
-        
-        // 验证脚本是否成功复制到/root/
-        const rootCheck = await this.executeCommand(serverId, 'test -f /root/Nftato.sh && echo "exists" || echo "not found"');
-        if (rootCheck.stdout.includes('exists')) {
-          logProgress(`脚本已成功复制到/root/目录`);
-        } else {
-          logProgress(`无法复制脚本到/root/目录，将使用用户目录的脚本`);
-        }
-      }
-      
-      // 验证至少一个位置的脚本权限
-      logProgress(`验证脚本执行权限...`);
-      const permResult = await this.executeCommand(serverId, '(test -x ~/Nftato.sh && echo "home executable") || (test -x /root/Nftato.sh && echo "root executable") || echo "not executable"');
-      if (permResult.stdout.includes('not executable')) {
-        logProgress(`脚本权限不正确，尝试修复`);
-        await this.executeCommand(serverId, 'chmod +x ~/Nftato.sh');
-        if (hasSudo) {
-          await this.executeCommand(serverId, 'sudo chmod +x /root/Nftato.sh');
-        }
-      }
-      
-      logProgress(`脚本已成功部署到服务器 ${server.name}!`);
-      
-      return {
-        success: true,
-        message: 'Nftato脚本已成功部署到服务器'
-      };
     } catch (error) {
-      console.error(`部署脚本时发生错误:`, error);
-      
-      // 如果提供了回调函数，推送错误信息
-      if (typeof progressCallback === 'function') {
-        progressCallback({
-          type: 'error',
-          message: `部署失败: ${error.message}`
-        });
-      }
-      
-      throw error;
+      logCallback(`部署过程出错: ${error.message}`, 'error');
+      return { success: false, error: error.message };
     }
   }
 

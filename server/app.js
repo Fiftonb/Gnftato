@@ -126,30 +126,76 @@ if (fs.existsSync(sourceScriptPath) && !fs.existsSync(targetScriptPath)) {
 // 创建Socket.IO实例
 const io = socketIO(server, {
   cors: {
-    origin: corsOptions.origin,
-    methods: ["GET", "POST"],
-    credentials: true
+    origin: "*",
+    methods: ["GET", "POST"]
   }
 });
 
 // 将io实例添加到app对象，以便在路由中访问
 app.io = io;
 
-// 配置Socket.IO连接
+// WebSocket连接处理
 io.on('connection', (socket) => {
-  console.log('WebSocket客户端连接: ', socket.id);
+  console.log('新的WebSocket连接:', socket.id);
   
-  // 断开连接处理
-  socket.on('disconnect', () => {
-    console.log('WebSocket客户端断开连接: ', socket.id);
+  // 处理部署请求
+  socket.on('start_deploy', async (data) => {
+    console.log('收到部署请求:', data);
+    const { serverId } = data;
+    
+    if (!serverId) {
+      socket.emit('deploy_log', { 
+        type: 'error', 
+        message: '缺少服务器ID参数' 
+      });
+      socket.emit('deploy_complete', { success: false, error: '缺少服务器ID参数' });
+      return;
+    }
+    
+    try {
+      // 引入SSH服务
+      const sshService = require('./services/sshService');
+      
+      // 发送初始日志
+      socket.emit('deploy_log', { 
+        type: 'log', 
+        message: `开始为服务器 ${serverId} 部署Nftato脚本...` 
+      });
+      
+      // 创建日志回调函数
+      const logCallback = (message, type = 'log') => {
+        if (typeof message === 'string' && message.trim()) {
+          socket.emit('deploy_log', { type, message: message.trim() });
+        }
+      };
+      
+      // 开始部署过程
+      console.log('开始部署进程...');
+      const result = await sshService.deployIptatoWithLogs(serverId, logCallback);
+      console.log('部署结果:', result);
+      
+      // 发送完成信号
+      socket.emit('deploy_complete', { 
+        success: result.success,
+        error: result.error
+      });
+      
+    } catch (error) {
+      console.error('部署过程出错:', error);
+      socket.emit('deploy_log', { 
+        type: 'error', 
+        message: `部署出错: ${error.message}` 
+      });
+      socket.emit('deploy_complete', { 
+        success: false, 
+        error: error.message 
+      });
+    }
   });
   
-  // 加入部署房间
-  socket.on('join_deploy_room', (data) => {
-    if (data && data.roomId) {
-      socket.join(data.roomId);
-      console.log(`客户端 ${socket.id} 加入部署房间: ${data.roomId}`);
-    }
+  // 处理断开连接
+  socket.on('disconnect', () => {
+    console.log('WebSocket连接断开:', socket.id);
   });
 });
 
