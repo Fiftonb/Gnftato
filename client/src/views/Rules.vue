@@ -1516,7 +1516,7 @@ export default {
           const stdout = execResponse.data?.stdout || '';
           this.debugInfo += `执行脚本输出:\n${stdout}\n`;
 
-          if (stdout.includes('管理脚本') || stdout.includes('iptables')) {
+          if (stdout.includes('管理脚本') || stdout.includes('nftables')) {
             this.debugInfo += '\n脚本可以成功执行！\n';
             this.debugInfo += '建议使用手动初始化功能完成后续步骤。\n';
             this.$message.success('脚本可以成功执行，但需要手动初始化');
