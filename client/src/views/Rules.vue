@@ -4,48 +4,47 @@
       <h1>防火墙规则管理</h1>
       <div>
         <el-button type="primary" @click="$router.push('/servers')">返回服务器列表</el-button>
-        <el-button v-if="isServerOnline" type="success" @click="deployIptatoScript" :loading="deploying">部署脚本</el-button>
+        <el-button v-if="isServerOnline" type="success" @click="deployIptatoScript"
+          :loading="deploying">部署脚本</el-button>
         <el-button v-if="isServerOnline" type="danger" @click="confirmClearRules">清空所有规则</el-button>
-        <el-button v-if="!isServerOnline && server" type="warning" @click="tryConnectServer" :loading="connecting">连接服务器</el-button>
+        <el-button v-if="!isServerOnline && server" type="warning" @click="tryConnectServer"
+          :loading="connecting">连接服务器</el-button>
       </div>
     </div>
 
     <div v-if="server" class="server-info">
-      <h2>{{ server.name }} <el-tag :type="server.status === 'online' ? 'success' : 'danger'">{{ server.status === 'online' ? '在线' : '离线' }}</el-tag></h2>
+      <h2>{{ server.name }} <el-tag :type="server.status === 'online' ? 'success' : 'danger'">{{ server.status ===
+        'online' ? '在线' : '离线' }}</el-tag></h2>
       <p>{{ server.host }}:{{ server.port }} ({{ server.username }})</p>
     </div>
 
     <el-tabs v-model="activeTab" type="card">
       <el-tab-pane label="入网控制" name="inbound">
         <template v-if="!isServerOnline">
-          <el-alert
-            title="服务器当前处于离线状态"
-            type="warning"
-            description="服务器离线时无法管理防火墙规则，请先连接服务器"
-            show-icon
-            :closable="false"
+          <el-alert title="服务器当前处于离线状态" type="warning" description="服务器离线时无法管理防火墙规则，请先连接服务器" show-icon :closable="false"
             style="margin-bottom: 15px;">
           </el-alert>
-          
+
           <div class="server-offline">
             <i class="el-icon-connection"></i>
             <h3>服务器未连接</h3>
             <p>当前无法管理防火墙规则，请先连接服务器</p>
           </div>
-          
+
           <div class="offline-actions">
-            <el-button type="primary" @click="tryConnectServer" :loading="connecting" icon="el-icon-refresh">连接服务器</el-button>
+            <el-button type="primary" @click="tryConnectServer" :loading="connecting"
+              icon="el-icon-refresh">连接服务器</el-button>
             <el-button @click="$router.push('/servers')" icon="el-icon-back">返回服务器列表</el-button>
           </div>
         </template>
-        
+
         <div v-else>
           <el-card>
             <div slot="header">
               <span>SSH端口状态</span>
               <el-button style="float: right; padding: 3px 0" type="text" @click="refreshSSHPort">刷新</el-button>
             </div>
-            
+
             <pre v-if="sshPortStatus" class="output">{{ sshPortStatus }}</pre>
             <div v-else>加载中...</div>
           </el-card>
@@ -53,9 +52,10 @@
           <el-card style="margin-top: 20px;">
             <div slot="header">
               <span>入网端口管理</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundPorts" :loading="loadingPorts">刷新</el-button>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundPorts"
+                :loading="loadingPorts">刷新</el-button>
             </div>
-            
+
             <el-table v-loading="loadingPorts" :data="inboundPorts" style="width: 100%">
               <el-table-column prop="port" label="端口" width="180"></el-table-column>
               <el-table-column prop="protocol" label="协议" width="100"></el-table-column>
@@ -64,19 +64,21 @@
                   <el-tooltip v-if="isSshPort(scope.row.port)" content="不能取消SSH端口放行，这可能导致无法连接服务器" placement="top">
                     <el-button type="danger" size="mini" disabled>取消放行</el-button>
                   </el-tooltip>
-                  <el-button v-else type="danger" size="mini" @click="disallowPort(scope.row.port)" :loading="loadingPorts" :disabled="!isServerOnline">取消放行</el-button>
+                  <el-button v-else type="danger" size="mini" @click="disallowPort(scope.row.port)"
+                    :loading="loadingPorts" :disabled="!isServerOnline">取消放行</el-button>
                 </template>
               </el-table-column>
             </el-table>
-            
+
             <el-divider></el-divider>
-            
+
             <el-form :inline="true" @submit.native.prevent="allowPort">
               <el-form-item label="放行端口">
                 <el-input v-model="portToAllow" placeholder="如: 80,443" :disabled="!isServerOnline"></el-input>
               </el-form-item>
               <el-form-item>
-                <el-button type="primary" @click="allowPort" :loading="loadingPorts" :disabled="!isServerOnline">添加</el-button>
+                <el-button type="primary" @click="allowPort" :loading="loadingPorts"
+                  :disabled="!isServerOnline">添加</el-button>
               </el-form-item>
             </el-form>
           </el-card>
@@ -84,26 +86,29 @@
           <el-card style="margin-top: 20px;">
             <div slot="header">
               <span>入网IP管理</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundIPs" :loading="loadingIPs">刷新</el-button>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundIPs"
+                :loading="loadingIPs">刷新</el-button>
             </div>
-            
+
             <el-table v-loading="loadingIPs" :data="inboundIPs" style="width: 100%">
               <el-table-column prop="ip" label="IP地址" width="180"></el-table-column>
               <el-table-column label="操作">
                 <template slot-scope="scope">
-                  <el-button type="danger" size="mini" @click="disallowIP(scope.row.ip || scope.row)" :loading="loadingIPs" :disabled="!isServerOnline">取消放行</el-button>
+                  <el-button type="danger" size="mini" @click="disallowIP(scope.row.ip || scope.row)"
+                    :loading="loadingIPs" :disabled="!isServerOnline">取消放行</el-button>
                 </template>
               </el-table-column>
             </el-table>
-            
+
             <el-divider></el-divider>
-            
+
             <el-form :inline="true" @submit.native.prevent="allowIP">
               <el-form-item label="放行IP">
                 <el-input v-model="ipToAllow" placeholder="如: 192.168.1.1" :disabled="!isServerOnline"></el-input>
               </el-form-item>
               <el-form-item>
-                <el-button type="primary" @click="allowIP" :loading="loadingIPs" :disabled="!isServerOnline">添加</el-button>
+                <el-button type="primary" @click="allowIP" :loading="loadingIPs"
+                  :disabled="!isServerOnline">添加</el-button>
               </el-form-item>
             </el-form>
           </el-card>
@@ -112,34 +117,31 @@
 
       <el-tab-pane label="出网控制" name="outbound">
         <template v-if="!isServerOnline">
-          <el-alert
-            title="服务器当前处于离线状态"
-            type="warning"
-            description="服务器离线时无法管理防火墙规则，请先连接服务器"
-            show-icon
-            :closable="false"
+          <el-alert title="服务器当前处于离线状态" type="warning" description="服务器离线时无法管理防火墙规则，请先连接服务器" show-icon :closable="false"
             style="margin-bottom: 15px;">
           </el-alert>
-          
+
           <div class="server-offline">
             <i class="el-icon-connection"></i>
             <h3>服务器未连接</h3>
             <p>当前无法管理防火墙规则，请先连接服务器</p>
           </div>
-          
+
           <div class="offline-actions">
-            <el-button type="primary" @click="tryConnectServer" :loading="connecting" icon="el-icon-refresh">连接服务器</el-button>
+            <el-button type="primary" @click="tryConnectServer" :loading="connecting"
+              icon="el-icon-refresh">连接服务器</el-button>
             <el-button @click="$router.push('/servers')" icon="el-icon-back">返回服务器列表</el-button>
           </div>
         </template>
-        
+
         <div v-else>
           <el-card>
             <div slot="header">
               <span>当前封禁列表</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshBlockList" :loading="loadingBlockList">刷新</el-button>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshBlockList"
+                :loading="loadingBlockList">刷新</el-button>
             </div>
-            
+
             <pre v-if="blockList" class="output">{{ blockList }}</pre>
             <div v-else>加载中...</div>
           </el-card>
@@ -149,17 +151,19 @@
               <span>封禁管理</span>
             </div>
             <el-button-group>
-              <el-button type="primary" @click="blockSPAM" :loading="loading" :disabled="!isServerOnline">封禁SPAM</el-button>
+              <el-button type="primary" @click="blockSPAM" :loading="loading"
+                :disabled="!isServerOnline">封禁SPAM</el-button>
             </el-button-group>
-            
+
             <el-divider></el-divider>
-            
+
             <el-form :inline="true" @submit.native.prevent="blockCustomPorts">
               <el-form-item label="自定义端口">
                 <el-input v-model="customPorts" placeholder="如: 6881,6882-6889" :disabled="!isServerOnline"></el-input>
               </el-form-item>
               <el-form-item>
-                <el-button type="warning" @click="blockCustomPorts" :loading="loading" :disabled="!isServerOnline">封禁</el-button>
+                <el-button type="warning" @click="blockCustomPorts" :loading="loading"
+                  :disabled="!isServerOnline">封禁</el-button>
               </el-form-item>
             </el-form>
           </el-card>
@@ -169,17 +173,20 @@
               <span>解封管理</span>
             </div>
             <el-button-group>
-              <el-button type="success" @click="unblockSPAM" :loading="loading" :disabled="!isServerOnline">解封SPAM</el-button>
+              <el-button type="success" @click="unblockSPAM" :loading="loading"
+                :disabled="!isServerOnline">解封SPAM</el-button>
             </el-button-group>
-            
+
             <el-divider></el-divider>
-            
+
             <el-form :inline="true" @submit.native.prevent="unblockCustomPorts">
               <el-form-item label="自定义端口">
-                <el-input v-model="customUnblockPorts" placeholder="如: 6881,6882-6889" :disabled="!isServerOnline"></el-input>
+                <el-input v-model="customUnblockPorts" placeholder="如: 6881,6882-6889"
+                  :disabled="!isServerOnline"></el-input>
               </el-form-item>
               <el-form-item>
-                <el-button type="success" @click="unblockCustomPorts" :loading="loading" :disabled="!isServerOnline">解封</el-button>
+                <el-button type="success" @click="unblockCustomPorts" :loading="loading"
+                  :disabled="!isServerOnline">解封</el-button>
               </el-form-item>
             </el-form>
           </el-card>
@@ -188,34 +195,31 @@
 
       <el-tab-pane label="DDoS防御" name="ddos">
         <template v-if="!isServerOnline">
-          <el-alert
-            title="服务器当前处于离线状态"
-            type="warning"
-            description="服务器离线时无法管理DDoS防御，请先连接服务器"
-            show-icon
-            :closable="false"
-            style="margin-bottom: 15px;">
+          <el-alert title="服务器当前处于离线状态" type="warning" description="服务器离线时无法管理DDoS防御，请先连接服务器" show-icon
+            :closable="false" style="margin-bottom: 15px;">
           </el-alert>
-          
+
           <div class="server-offline">
             <i class="el-icon-connection"></i>
             <h3>服务器未连接</h3>
             <p>当前无法管理DDoS防御，请先连接服务器</p>
           </div>
-          
+
           <div class="offline-actions">
-            <el-button type="primary" @click="tryConnectServer" :loading="connecting" icon="el-icon-refresh">连接服务器</el-button>
+            <el-button type="primary" @click="tryConnectServer" :loading="connecting"
+              icon="el-icon-refresh">连接服务器</el-button>
             <el-button @click="$router.push('/servers')" icon="el-icon-back">返回服务器列表</el-button>
           </div>
         </template>
-        
+
         <div v-else>
           <el-card>
             <div slot="header">
               <span>当前防御状态</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshDefenseStatus" :loading="loadingDefenseStatus">刷新</el-button>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshDefenseStatus"
+                :loading="loadingDefenseStatus">刷新</el-button>
             </div>
-            
+
             <pre v-if="defenseStatus" class="output">{{ defenseStatus }}</pre>
             <div v-else>加载中...</div>
           </el-card>
@@ -225,45 +229,54 @@
               <span>DDoS防御配置</span>
             </div>
             <el-button-group>
-              <el-button type="primary" @click="setupDdosProtectionAction" :loading="loading" :disabled="!isServerOnline">配置DDoS防御规则</el-button>
-              <el-button type="primary" @click="showIpListsDialog" :loading="loading" :disabled="!isServerOnline">管理IP黑白名单</el-button>
+              <el-button type="primary" @click="setupDdosProtectionAction" :loading="loading"
+                :disabled="!isServerOnline">配置DDoS防御规则</el-button>
+              <el-button type="primary" @click="showIpListsDialog" :loading="loading"
+                :disabled="!isServerOnline">管理IP黑白名单</el-button>
             </el-button-group>
-            
+
             <el-divider></el-divider>
-            
+
             <h4>自定义端口DDoS防御</h4>
             <el-form label-width="140px" @submit.native.prevent="setupCustomPortProtectionAction">
               <el-form-item label="端口号">
-                <el-input v-model="customDdosPort" placeholder="如: 8080" :disabled="!isServerOnline" style="width: 200px"></el-input>
+                <el-input v-model="customDdosPort" placeholder="如: 8080" :disabled="!isServerOnline"
+                  style="width: 200px"></el-input>
               </el-form-item>
-              
+
               <el-form-item label="协议类型">
-                <el-select v-model="customDdosProtoType" placeholder="请选择" :disabled="!isServerOnline" style="width: 200px">
+                <el-select v-model="customDdosProtoType" placeholder="请选择" :disabled="!isServerOnline"
+                  style="width: 200px">
                   <el-option label="TCP" :value="1"></el-option>
                   <el-option label="UDP" :value="2"></el-option>
                   <el-option label="TCP+UDP" :value="3"></el-option>
                 </el-select>
               </el-form-item>
-              
+
               <el-form-item label="每IP最大连接数">
-                <el-input-number v-model="customDdosMaxConn" :min="100" :max="1000" :step="50" :disabled="!isServerOnline"></el-input-number>
+                <el-input-number v-model="customDdosMaxConn" :min="100" :max="1000" :step="50"
+                  :disabled="!isServerOnline"></el-input-number>
               </el-form-item>
-              
+
               <el-form-item label="每分钟最大新连接">
-                <el-input-number v-model="customDdosMaxRateMin" :min="100" :max="1000" :step="50" :disabled="!isServerOnline"></el-input-number>
+                <el-input-number v-model="customDdosMaxRateMin" :min="100" :max="1000" :step="50"
+                  :disabled="!isServerOnline"></el-input-number>
               </el-form-item>
-              
+
               <el-form-item label="每秒最大新连接">
-                <el-input-number v-model="customDdosMaxRateSec" :min="50" :max="500" :step="25" :disabled="!isServerOnline"></el-input-number>
+                <el-input-number v-model="customDdosMaxRateSec" :min="50" :max="500" :step="25"
+                  :disabled="!isServerOnline"></el-input-number>
               </el-form-item>
-              
+
               <el-form-item label="违规IP封禁时长">
-                <el-input-number v-model="customDdosBanHours" :min="1" :max="72" :step="1" :disabled="!isServerOnline"></el-input-number>
+                <el-input-number v-model="customDdosBanHours" :min="1" :max="72" :step="1"
+                  :disabled="!isServerOnline"></el-input-number>
                 <span class="form-item-tip">小时</span>
               </el-form-item>
-              
+
               <el-form-item>
-                <el-button type="primary" @click="setupCustomPortProtectionAction" :loading="loading" :disabled="!isServerOnline">配置</el-button>
+                <el-button type="primary" @click="setupCustomPortProtectionAction" :loading="loading"
+                  :disabled="!isServerOnline">配置</el-button>
               </el-form-item>
             </el-form>
           </el-card>
@@ -272,11 +285,7 @@
     </el-tabs>
 
     <!-- IP黑白名单管理对话框 -->
-    <el-dialog 
-      title="IP黑白名单管理" 
-      :visible.sync="ipListsDialogVisible" 
-      width="600px"
-      :close-on-click-modal="false">
+    <el-dialog title="IP黑白名单管理" :visible.sync="ipListsDialogVisible" width="600px" :close-on-click-modal="false">
       <el-tabs v-model="ipListsActiveTab">
         <el-tab-pane label="添加IP白名单" name="addWhite">
           <el-form label-width="120px">
@@ -292,7 +301,7 @@
             </el-form-item>
           </el-form>
         </el-tab-pane>
-        
+
         <el-tab-pane label="添加IP黑名单" name="addBlack">
           <el-form label-width="120px">
             <el-form-item label="IP地址">
@@ -307,7 +316,7 @@
             </el-form-item>
           </el-form>
         </el-tab-pane>
-        
+
         <el-tab-pane label="从白名单移除" name="removeWhite">
           <el-form label-width="120px">
             <el-form-item label="IP地址">
@@ -318,7 +327,7 @@
             </el-form-item>
           </el-form>
         </el-tab-pane>
-        
+
         <el-tab-pane label="从黑名单移除" name="removeBlack">
           <el-form label-width="120px">
             <el-form-item label="IP地址">
@@ -330,11 +339,11 @@
           </el-form>
         </el-tab-pane>
       </el-tabs>
-      
+
       <div v-if="ipManageResult" class="ip-manage-result">
         <pre>{{ ipManageResult }}</pre>
       </div>
-      
+
       <div slot="footer" class="dialog-footer">
         <el-button @click="ipListsDialogVisible = false">关闭</el-button>
         <el-button type="primary" @click="refreshDefenseStatus(); ipListsDialogVisible = false">完成</el-button>
@@ -346,14 +355,11 @@
         <span>命令输出</span>
         <el-button style="float: right; padding: 3px 0" type="text" @click="clearCommandOutput">清空</el-button>
       </div>
-      <pre :class="['output', {'output-error': commandOutput.includes('失败') || commandOutput.includes('错误')}]">{{ commandOutput }}</pre>
-      
+      <pre :class="['output', { 'output-error': commandOutput.includes('失败') || commandOutput.includes('错误') }]">{{
+        commandOutput }}</pre>
+
       <div v-if="commandOutput.includes('status code 500')" class="error-solution">
-        <el-alert
-          title="发现服务器内部错误(500)"
-          type="error"
-          description="服务器内部错误可能由多种原因导致，建议尝试以下解决方案："
-          show-icon
+        <el-alert title="发现服务器内部错误(500)" type="error" description="服务器内部错误可能由多种原因导致，建议尝试以下解决方案：" show-icon
           :closable="false">
         </el-alert>
         <el-collapse style="margin-top: 10px;">
@@ -364,7 +370,9 @@
               <li>检查服务器磁盘空间是否足够</li>
               <li>查看服务器日志文件 (/var/log/syslog 或 /var/log/messages)</li>
               <li>尝试在服务器上手动执行以下命令:</li>
-              <pre class="command-example">wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash iPtato.sh</pre>
+              <pre class="command-example">wget -N --no-check-certificate
+            https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash
+            iPtato.sh</pre>
               <li>如仍无法解决，请联系管理员或提交详细错误报告</li>
             </ol>
           </el-collapse-item>
@@ -380,13 +388,17 @@
         <el-step v-for="(step, index) in initializationSteps" :key="index" :title="step.name"></el-step>
       </el-steps>
       <div class="initialization-actions" style="margin-top: 20px;">
-        <el-button v-if="initStepActive === 1" type="primary" @click="connectServer" :loading="connecting">连接服务器</el-button>
-        <el-button v-if="initStepActive === 2" type="primary" @click="checkInitialization" :loading="deploying">自动部署脚本</el-button>
-        <el-button v-if="initStepActive === 2" type="warning" @click="deployIptatoManually" :loading="deploying">手动部署脚本</el-button>
+        <el-button v-if="initStepActive === 1" type="primary" @click="connectServer"
+          :loading="connecting">连接服务器</el-button>
+        <el-button v-if="initStepActive === 2" type="primary" @click="checkInitialization"
+          :loading="deploying">自动部署脚本</el-button>
+        <el-button v-if="initStepActive === 2" type="warning" @click="deployIptatoManually"
+          :loading="deploying">手动部署脚本</el-button>
         <el-button v-if="initStepActive === 3" type="primary" @click="completeInitialization">加载规则</el-button>
         <el-button type="danger" @click="manualInitialize" :loading="loading">跳过检查直接初始化</el-button>
       </div>
-      <div v-if="commandOutput && commandOutput.includes('脚本部署失败')" class="error-info" style="margin-top: 15px; color: #F56C6C;">
+      <div v-if="commandOutput && commandOutput.includes('脚本部署失败')" class="error-info"
+        style="margin-top: 15px; color: #F56C6C;">
         <p>部署失败原因可能包括：</p>
         <ul>
           <li>服务器连接不稳定</li>
@@ -412,7 +424,7 @@
       <el-button type="danger" @click="resetConnectionState" :loading="debugging">重置连接状态</el-button>
       <el-button type="primary" @click="generateManualCommands" :loading="debugging">生成手动执行命令</el-button>
       <el-button type="success" @click="refreshAllData" :loading="loadingRefreshAll">刷新所有数据</el-button>
-      
+
       <div v-if="debugInfo" class="debug-info" style="margin-top: 15px;">
         <h4>调试信息：</h4>
         <pre>{{ debugInfo }}</pre>
@@ -527,7 +539,7 @@ export default {
     // 添加更细致的服务器状态文本
     serverStatusText() {
       if (!this.server) return '未知';
-      switch(this.server.status) {
+      switch (this.server.status) {
         case 'online': return '在线';
         case 'offline': return '离线';
         case 'connecting': return '连接中';
@@ -556,7 +568,7 @@ export default {
   },
   created() {
     this.activeTab = 'inbound';
-    
+
     if (this.hasValidServerId) {
       this.$nextTick(async () => {
         await this.initializeApplication();
@@ -565,7 +577,7 @@ export default {
           await this.refreshAllData();
         }
       });
-      
+
       this.startServerStatusCheck();
     } else {
       this.handleInvalidServerId();
@@ -585,17 +597,10 @@ export default {
     ]),
     ...mapActions('rules', [
       'getBlockList',
-      'blockBTPTAction',
       'blockSPAMAction',
-      'blockAllAction',
-      'blockCustomPortsAction',
-      'blockCustomKeywordAction',
-      'unblockBTPTAction',
+      'blockCustomPortsAction',,
       'unblockSPAMAction',
-      'unblockAllAction',
       'unblockCustomPortsAction',
-      'unblockCustomKeywordAction',
-      'unblockAllKeywordsAction',
       'getInboundPorts',
       'getInboundIPs',
       'allowInboundPortsAction',
@@ -618,7 +623,7 @@ export default {
         this.commandOutput = '正在初始化应用...';
         await this.autoResetConnectionState();
         const initialized = await this.checkInitialization();
-        
+
         if (initialized) {
           this.commandOutput += '\n初始化成功，应用已就绪';
         } else {
@@ -652,10 +657,10 @@ export default {
         this.resetInitSteps();
         this.isInitialized = false;
         this.initStepActive = 0;
-        
+
         this.commandOutput = '正在检查服务器状态...';
         this.loading = true;
-        
+
         // 步骤1: 检查状态
         const serverResponse = await this.getServer(this.serverId);
         if (!serverResponse || !serverResponse.success) {
@@ -664,20 +669,20 @@ export default {
         this.server = serverResponse.data;
         this.initializationSteps[0].done = true;
         this.initStepActive = 1;
-        
+
         // 尝试加载服务器缓存
         const cacheLoaded = await this.loadServerCache();
         if (cacheLoaded) {
           this.commandOutput += '\n已成功加载服务器缓存数据';
         }
-        
+
         // 步骤2: 仅在服务器未连接且自动连接失败时尝试再次连接
         if (!this.server.status || this.server.status !== 'online') {
           this.commandOutput += '\n服务器未连接，正在尝试连接...';
           this.connecting = true;
           const connectResponse = await this.connectServer(this.serverId);
           this.connecting = false;
-          
+
           if (!connectResponse || !connectResponse.success) {
             // 如果连接失败但有缓存数据，仍可继续
             if (cacheLoaded) {
@@ -702,7 +707,7 @@ export default {
           this.initializationSteps[1].done = true;
           this.initStepActive = 2;
         }
-        
+
         // 步骤3: 检查脚本部署状态 - 仅在缓存不存在或强制检查时执行
         if (!cacheLoaded || this.deploying) {
           this.commandOutput += '\n检查脚本部署情况...';
@@ -710,11 +715,11 @@ export default {
           try {
             const deployResponse = await this.deployIptato(this.serverId);
             this.deploying = false;
-            
+
             if (!deployResponse || !deployResponse.success) {
               const errorMsg = deployResponse?.error || '脚本部署失败';
               this.commandOutput += `\n脚本部署失败: ${errorMsg}`;
-              
+
               if (errorMsg.includes('500') || errorMsg.includes('内部错误')) {
                 this.commandOutput += '\n服务器内部错误，可能原因：';
                 this.commandOutput += '\n1. 服务器磁盘空间不足';
@@ -725,16 +730,16 @@ export default {
                 this.commandOutput += '\n- 查看服务器日志获取详细错误信息';
                 this.commandOutput += '\n- 尝试手动连接服务器并安装依赖';
               }
-              
+
               this.$message.error(`脚本部署失败: ${errorMsg}`);
               throw new Error(errorMsg);
             }
-            
+
             this.commandOutput += '\n脚本部署成功';
           } catch (deployError) {
             this.deploying = false;
             this.commandOutput += `\n脚本部署过程中出错: ${deployError.message}`;
-            
+
             // 如果有缓存数据，即使部署失败也可以继续
             if (cacheLoaded) {
               this.$message.warning('脚本部署失败，将使用缓存数据');
@@ -747,42 +752,42 @@ export default {
           // 有缓存数据且服务器在线，跳过部署步骤
           this.commandOutput += '\n使用已有缓存数据，跳过脚本部署检查';
         }
-        
+
         this.initializationSteps[2].done = true;
         this.initStepActive = 3;
-        
+
         // 步骤4: 加载规则信息
         this.initializationSteps[3].done = true;
         this.isInitialized = true;
         this.loading = false;
-        
+
         // 如果服务器在线且某些数据未从缓存加载，则请求这些数据
         if (this.isServerOnline) {
           // 创建需要刷新的数据类型数组
           const dataToRefresh = [];
-          
+
           if (!this.dataLoaded.blockList) {
             dataToRefresh.push('blockList');
           }
-          
+
           if (!this.dataLoaded.sshPortStatus) {
             dataToRefresh.push('sshPortStatus');
           }
-          
+
           if (!this.dataLoaded.inboundPorts) {
             dataToRefresh.push('inboundPorts');
           }
-          
+
           if (!this.dataLoaded.inboundIPs) {
             dataToRefresh.push('inboundIPs');
           }
-          
+
           // 使用统一的刷新方法
           if (dataToRefresh.length > 0) {
             setTimeout(() => this.refreshSelectedData(dataToRefresh), 500);
           }
         }
-        
+
         return true;
       } catch (error) {
         this.loading = false;
@@ -801,34 +806,34 @@ export default {
         this.$message.error('未指定服务器ID，无法获取阻止列表');
         return;
       }
-      
+
       // 如果已经在加载中，则不重复加载
       if (this.loadingBlockList) {
         return;
       }
-      
+
       const now = Date.now();
-      if (this.dataCache.blockList && 
-          (now - this.cacheTimestamps.blockList) < this.cacheTTL.blockList) {
+      if (this.dataCache.blockList &&
+        (now - this.cacheTimestamps.blockList) < this.cacheTTL.blockList) {
         this.blockList = this.dataCache.blockList;
         console.log('使用缓存的阻止列表数据');
         return;
       }
-      
+
       let retries = 0;
       const maxRetries = this.retryConfig.maxRetries;
-      
+
       while (retries <= maxRetries) {
         try {
           this.loadingBlockList = true; // 使用专用loading状态
           const response = await this.getBlockList(this.serverId);
-          
+
           if (response && response.success) {
             this.blockList = response.data || '无阻止列表数据';
             this.dataCache.blockList = this.blockList;
             this.cacheTimestamps.blockList = now;
             this.dataLoaded.blockList = true;
-            
+
             // 更新服务器缓存
             await this.updateServerCacheItem('blockList', this.blockList);
             break; // 成功则退出循环
@@ -859,7 +864,7 @@ export default {
           }
         }
       }
-      
+
       this.loadingBlockList = false;
     },
     async refreshSSHPort() {
@@ -867,38 +872,38 @@ export default {
         this.$message.error('未指定服务器ID，无法获取SSH端口');
         return;
       }
-      
+
       const now = Date.now();
-      if (this.dataCache.sshPortStatus && 
-          (now - this.cacheTimestamps.sshPortStatus) < this.cacheTTL.sshPortStatus) {
+      if (this.dataCache.sshPortStatus &&
+        (now - this.cacheTimestamps.sshPortStatus) < this.cacheTTL.sshPortStatus) {
         this.sshPortStatus = this.dataCache.sshPortStatus;
         console.log('使用缓存的SSH端口数据');
         return;
       }
-      
+
       let retries = 0;
       const maxRetries = this.retryConfig.maxRetries;
-      
+
       while (retries <= maxRetries) {
         try {
           this.loadingSSHPort = true; // 使用专用loading状态
           const response = await this.getSSHPort(this.serverId);
-          
+
           if (response && response.success) {
             this.sshPortStatus = response.data || '无SSH端口数据';
             this.dataCache.sshPortStatus = this.sshPortStatus;
             this.cacheTimestamps.sshPortStatus = now;
             this.dataLoaded.sshPortStatus = true;
-            
+
             // 更新服务器缓存
             await this.updateServerCacheItem('sshPortStatus', this.sshPortStatus);
-            
+
             try {
               const sshData = response.data;
               if (sshData && typeof sshData === 'string') {
-                const portMatch = sshData.match(/SSH端口\s*[:：]\s*(\d+)/i) || 
-                                sshData.match(/端口\s*[:：]\s*(\d+)/i) || 
-                                sshData.match(/port\s*[:：]\s*(\d+)/i);
+                const portMatch = sshData.match(/SSH端口\s*[:：]\s*(\d+)/i) ||
+                  sshData.match(/端口\s*[:：]\s*(\d+)/i) ||
+                  sshData.match(/port\s*[:：]\s*(\d+)/i);
                 if (portMatch && portMatch[1]) {
                   this.sshPort = parseInt(portMatch[1], 10);
                   console.log(`已识别SSH端口: ${this.sshPort}`);
@@ -939,7 +944,7 @@ export default {
           }
         }
       }
-      
+
       this.loadingSSHPort = false;
     },
     async refreshInboundPorts() {
@@ -947,37 +952,37 @@ export default {
         this.$message.error('未指定服务器ID，无法获取入网端口');
         return;
       }
-      
+
       const now = Date.now();
-      if (this.dataCache.inboundPorts && 
-          (now - this.cacheTimestamps.inboundPorts) < this.cacheTTL.inboundPorts) {
+      if (this.dataCache.inboundPorts &&
+        (now - this.cacheTimestamps.inboundPorts) < this.cacheTTL.inboundPorts) {
         this.inboundPorts = this.dataCache.inboundPorts;
         console.log('使用缓存的入网端口数据');
         return;
       }
-      
+
       try {
         this.loadingPorts = true; // 使用专用loading状态
         const response = await this.getInboundPorts(this.serverId);
-        
+
         if (response && response.success) {
           const data = response.data || { tcp: [], udp: [] };
-          
+
           const uniquePorts = [...new Set([...(data.tcp || []), ...(data.udp || [])])];
-          const formattedPorts = uniquePorts.map(port => ({ 
-            port, 
-            protocol: 'TCP|UDP' 
+          const formattedPorts = uniquePorts.map(port => ({
+            port,
+            protocol: 'TCP|UDP'
           }));
-          
+
           console.log('处理后的端口数据:', formattedPorts);
           this.inboundPorts = formattedPorts;
           this.dataCache.inboundPorts = formattedPorts;
           this.cacheTimestamps.inboundPorts = now;
           this.dataLoaded.inboundPorts = true;
-          
+
           // 更新服务器缓存
           await this.updateServerCacheItem('inboundPorts', response.data || { tcp: [], udp: [] });
-          
+
           if (formattedPorts.length === 0) {
             this.commandOutput = '当前无放行端口';
           } else {
@@ -1001,19 +1006,19 @@ export default {
         this.$message.error('未指定服务器ID，无法获取入网IP');
         return;
       }
-      
+
       const now = Date.now();
-      if (this.dataCache.inboundIPs && 
-          (now - this.cacheTimestamps.inboundIPs) < this.cacheTTL.inboundIPs) {
+      if (this.dataCache.inboundIPs &&
+        (now - this.cacheTimestamps.inboundIPs) < this.cacheTTL.inboundIPs) {
         this.inboundIPs = this.dataCache.inboundIPs;
         console.log('使用缓存的入网IP数据');
         return;
       }
-      
+
       try {
         this.loadingIPs = true; // 使用专用loading状态
         const response = await this.getInboundIPs(this.serverId);
-        
+
         if (!response || !response.success) {
           if (response && response.error && response.error.includes('连接')) {
             this.$message.error('服务器连接失败，请检查连接设置');
@@ -1030,18 +1035,18 @@ export default {
           this.commandOutput = `获取入网IP失败: ${response?.error || '未知错误'}`;
           return;
         }
-        
+
         const ipData = response.data || [];
-        
+
         if (Array.isArray(ipData)) {
           this.inboundIPs = ipData.map(ip => typeof ip === 'string' ? { ip } : ip);
           this.dataCache.inboundIPs = this.inboundIPs;
           this.cacheTimestamps.inboundIPs = now;
           this.dataLoaded.inboundIPs = true;
-          
+
           // 更新服务器缓存
           await this.updateServerCacheItem('inboundIPs', response.data || []);
-          
+
           if (ipData.length === 0) {
             this.commandOutput = '当前无放行IP';
           } else {
@@ -1066,42 +1071,18 @@ export default {
         this.$message.error('未指定服务器ID');
         return;
       }
-      
-    },
-    async blockBTPT() {
-      if (!this.hasValidServerId) {
-        this.$message.error('未指定服务器ID，无法执行阻止操作');
-        return;
-      }
-      
-      try {
-        this.loading = true;
-        const response = await this.blockBTPTAction(this.serverId);
-        
-        if (response && response.success) {
-          this.$message.success('成功阻止BT/PT流量');
-          this.invalidateCache('blockList');
-          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
-          await this.refreshBlockList();
-        } else {
-          this.$message.error(response?.error || '阻止BT/PT失败');
-        }
-      } catch (error) {
-        this.$message.error(`阻止BT/PT错误: ${error.message}`);
-      } finally {
-        this.loading = false;
-      }
+
     },
     async blockSPAM() {
       if (!this.hasValidServerId) {
         this.$message.error('未指定服务器ID，无法执行阻止操作');
         return;
       }
-      
+
       try {
         this.loading = true;
         const response = await this.blockSPAMAction(this.serverId);
-        
+
         if (response && response.success) {
           this.$message.success('成功阻止垃圾邮件流量');
           this.invalidateCache('blockList');
@@ -1116,41 +1097,17 @@ export default {
         this.loading = false;
       }
     },
-    async blockAll() {
-      if (!this.hasValidServerId) {
-        this.$message.error('未指定服务器ID，无法执行阻止操作');
-        return;
-      }
-      
-      try {
-        this.loading = true;
-        const response = await this.blockAllAction(this.serverId);
-        
-        if (response && response.success) {
-          this.$message.success('成功阻止所有流量');
-          this.invalidateCache('blockList');
-          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
-          await this.refreshBlockList();
-        } else {
-          this.$message.error(response?.error || '阻止所有流量失败');
-        }
-      } catch (error) {
-        this.$message.error(`阻止所有流量错误: ${error.message}`);
-      } finally {
-        this.loading = false;
-      }
-    },
     async blockCustomPorts() {
       if (!this.hasValidServerId) {
         this.$message.error('未指定服务器ID，无法执行阻止操作');
         return;
       }
-      
+
       if (!this.customPorts) {
         this.$message.warning('请输入要阻止的端口');
         return;
       }
-      
+
       try {
         this.loading = true;
         this.loadingAction = true;
@@ -1158,7 +1115,7 @@ export default {
           serverId: this.serverId,
           ports: this.customPorts
         });
-        
+
         if (response && response.success) {
           this.$message.success(`成功阻止端口: ${this.customPorts}`);
           this.customPorts = '';
@@ -1175,73 +1132,16 @@ export default {
         this.loadingAction = false;
       }
     },
-    async blockCustomKeyword() {
-      if (!this.hasValidServerId) {
-        this.$message.error('未指定服务器ID，无法执行阻止操作');
-        return;
-      }
-      
-      if (!this.customKeyword) {
-        this.$message.warning('请输入要阻止的关键词');
-        return;
-      }
-      
-      try {
-        this.loading = true;
-        const response = await this.blockCustomKeywordAction({
-          serverId: this.serverId,
-          keyword: this.customKeyword
-        });
-        
-        if (response && response.success) {
-          this.$message.success(`成功阻止关键词: ${this.customKeyword}`);
-          this.customKeyword = '';
-          this.invalidateCache('blockList');
-          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
-          await this.refreshBlockList();
-        } else {
-          this.$message.error(response?.error || '阻止自定义关键词失败');
-        }
-      } catch (error) {
-        this.$message.error(`阻止自定义关键词错误: ${error.message}`);
-      } finally {
-        this.loading = false;
-      }
-    },
-    async unblockBTPT() {
-      if (!this.hasValidServerId) {
-        this.$message.error('未指定服务器ID，无法执行取消阻止操作');
-        return;
-      }
-      
-      try {
-        this.loading = true;
-        const response = await this.unblockBTPTAction(this.serverId);
-        
-        if (response && response.success) {
-          this.$message.success('成功取消阻止BT/PT流量');
-          this.invalidateCache('blockList');
-          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
-          await this.refreshBlockList();
-        } else {
-          this.$message.error(response?.error || '取消阻止BT/PT失败');
-        }
-      } catch (error) {
-        this.$message.error(`取消阻止BT/PT错误: ${error.message}`);
-      } finally {
-        this.loading = false;
-      }
-    },
     async unblockSPAM() {
       if (!this.hasValidServerId) {
         this.$message.error('未指定服务器ID，无法执行取消阻止操作');
         return;
       }
-      
+
       try {
         this.loading = true;
         const response = await this.unblockSPAMAction(this.serverId);
-        
+
         if (response && response.success) {
           this.$message.success('成功取消阻止垃圾邮件流量');
           this.invalidateCache('blockList');
@@ -1256,41 +1156,17 @@ export default {
         this.loading = false;
       }
     },
-    async unblockAll() {
-      if (!this.hasValidServerId) {
-        this.$message.error('未指定服务器ID，无法执行取消阻止操作');
-        return;
-      }
-      
-      try {
-        this.loading = true;
-        const response = await this.unblockAllAction(this.serverId);
-        
-        if (response && response.success) {
-          this.$message.success('成功取消阻止所有流量');
-          this.invalidateCache('blockList');
-          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
-          await this.refreshBlockList();
-        } else {
-          this.$message.error(response?.error || '取消阻止所有流量失败');
-        }
-      } catch (error) {
-        this.$message.error(`取消阻止所有流量错误: ${error.message}`);
-      } finally {
-        this.loading = false;
-      }
-    },
     async unblockCustomPorts() {
       if (!this.hasValidServerId) {
         this.$message.error('未指定服务器ID，无法执行取消阻止操作');
         return;
       }
-      
+
       if (!this.customUnblockPorts) {
         this.$message.warning('请输入要取消阻止的端口');
         return;
       }
-      
+
       try {
         this.loading = true;
         this.loadingAction = true;
@@ -1298,7 +1174,7 @@ export default {
           serverId: this.serverId,
           ports: this.customUnblockPorts
         });
-        
+
         if (response && response.success) {
           this.$message.success(`成功取消阻止端口: ${this.customUnblockPorts}`);
           this.customUnblockPorts = '';
@@ -1315,74 +1191,17 @@ export default {
         this.loadingAction = false;
       }
     },
-    async unblockCustomKeyword() {
-      if (!this.hasValidServerId) {
-        this.$message.error('未指定服务器ID，无法执行取消阻止操作');
-        return;
-      }
-      
-      if (!this.customUnblockKeyword) {
-        this.$message.warning('请输入要取消阻止的关键词');
-        return;
-      }
-      
-      try {
-        this.loading = true;
-        const response = await this.unblockCustomKeywordAction({
-          serverId: this.serverId,
-          keyword: this.customUnblockKeyword
-        });
-        
-        if (response && response.success) {
-          this.$message.success(`成功取消阻止关键词: ${this.customUnblockKeyword}`);
-          this.customUnblockKeyword = '';
-          this.invalidateCache('blockList');
-          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
-          await this.refreshBlockList();
-        } else {
-          this.$message.error(response?.error || '取消阻止自定义关键词失败');
-        }
-      } catch (error) {
-        this.$message.error(`取消阻止自定义关键词错误: ${error.message}`);
-      } finally {
-        this.loading = false;
-      }
-    },
-    async unblockAllKeywords() {
-      if (!this.hasValidServerId) {
-        this.$message.error('未指定服务器ID，无法执行取消阻止操作');
-        return;
-      }
-      
-      try {
-        this.loading = true;
-        const response = await this.unblockAllKeywordsAction(this.serverId);
-        
-        if (response && response.success) {
-          this.$message.success('成功取消阻止所有关键词');
-          this.invalidateCache('blockList');
-          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
-          await this.refreshBlockList();
-        } else {
-          this.$message.error(response?.error || '取消阻止所有关键词失败');
-        }
-      } catch (error) {
-        this.$message.error(`取消阻止所有关键词错误: ${error.message}`);
-      } finally {
-        this.loading = false;
-      }
-    },
     async allowPort() {
       if (!this.hasValidServerId) {
         this.$message.error('未指定服务器ID，无法执行允许入网操作');
         return;
       }
-      
+
       if (!this.portToAllow) {
         this.$message.warning('请输入要允许的端口');
         return;
       }
-      
+
       try {
         this.loadingPorts = true; // 使用专用loading状态
         this.loadingAction = true; // 同时设置操作状态
@@ -1390,7 +1209,7 @@ export default {
           serverId: this.serverId,
           ports: this.portToAllow
         });
-        
+
         if (response && response.success) {
           this.$message.success(`成功允许入网端口: ${this.portToAllow}`);
           this.portToAllow = '';
@@ -1412,12 +1231,12 @@ export default {
         this.$message.error('未指定服务器ID，无法执行取消放行操作');
         return;
       }
-      
+
       if (this.isSshPort(port)) {
         this.$message.error('不能取消SSH端口的放行，这可能导致无法连接服务器');
         return;
       }
-      
+
       // 对关键端口增加二次确认
       if (this.isCriticalPort(port) && !this.isSshPort(port)) {
         this.$confirm(`端口${port}是常用服务端口，取消放行可能影响服务器某些功能。确定要继续吗?`, '警告', {
@@ -1439,12 +1258,12 @@ export default {
         this.$message.error('未指定服务器ID，无法执行允许入网操作');
         return;
       }
-      
+
       if (!this.ipToAllow) {
         this.$message.warning('请输入要允许的IP地址');
         return;
       }
-      
+
       try {
         this.loadingIPs = true;
         this.loadingAction = true;
@@ -1452,7 +1271,7 @@ export default {
           serverId: this.serverId,
           ips: this.ipToAllow
         });
-        
+
         if (response && response.success) {
           this.$message.success(`成功允许入网IP: ${this.ipToAllow}`);
           this.ipToAllow = '';
@@ -1474,14 +1293,14 @@ export default {
         this.$message.error('未指定服务器ID，无法执行取消放行操作');
         return;
       }
-      
+
       const ipAddress = typeof ip === 'object' ? ip.ip : ip;
-      
+
       if (!ipAddress) {
         this.$message.error('无效的IP地址');
         return;
       }
-      
+
       try {
         this.loadingIPs = true;
         this.loadingAction = true;
@@ -1489,7 +1308,7 @@ export default {
           serverId: this.serverId,
           ips: ipAddress
         });
-        
+
         if (response && response.success) {
           this.$message.success(`成功取消放行IP: ${ipAddress}`);
           this.invalidateCache('inboundIPs');
@@ -1510,7 +1329,7 @@ export default {
         this.$message.error('未指定服务器ID，无法执行清除规则操作');
         return;
       }
-      
+
       this.$confirm('此操作将清空所有防火墙规则，是否继续?', '警告', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
@@ -1521,7 +1340,7 @@ export default {
         this.$message({
           type: 'info',
           message: '已取消清空操作'
-        });          
+        });
       });
     },
     async clearAllRules() {
@@ -1529,12 +1348,12 @@ export default {
         this.$message.error('未指定服务器ID，无法执行清除规则操作');
         return;
       }
-      
+
       try {
         this.loading = true;
         this.loadingAction = true;
         const response = await this.clearAllRulesAction(this.serverId);
-        
+
         if (response && response.success) {
           this.$message.success('成功清除所有规则');
           // 清空所有缓存
@@ -1556,39 +1375,39 @@ export default {
         this.$message.error('未指定服务器ID，无法执行部署操作');
         return;
       }
-      
+
       try {
         this.deploying = true;
         this.commandOutput = '正在尝试手动部署脚本...\n';
-        
+
         const response = await this.$store.dispatch('servers/executeCommand', {
           serverId: this.serverId,
           command: 'wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash iPtato.sh'
         });
-        
+
         if (response && response.success) {
           this.commandOutput += '手动部署命令执行成功，正在验证安装结果...\n';
-          
+
           const verifyResponse = await this.$store.dispatch('servers/executeCommand', {
             serverId: this.serverId,
             command: 'test -f /root/iptato.sh && echo "installed" || echo "not found"'
           });
-          
-          if (verifyResponse && verifyResponse.success && 
-              verifyResponse.data && verifyResponse.data.stdout && 
-              verifyResponse.data.stdout.includes('installed')) {
-            
+
+          if (verifyResponse && verifyResponse.success &&
+            verifyResponse.data && verifyResponse.data.stdout &&
+            verifyResponse.data.stdout.includes('installed')) {
+
             this.commandOutput += '脚本已成功安装!\n';
             this.$message.success('脚本手动部署成功');
             this.initializationSteps[2].done = true;
             this.initStepActive = 3;
-            
+
             await this.clearServerCacheAfterChange();
             await this.refreshBlockList();
             await this.refreshSSHPort();
             await this.refreshInboundPorts();
             await this.refreshInboundIPs();
-            
+
             this.initializationSteps[3].done = true;
             this.isInitialized = true;
           } else {
@@ -1611,17 +1430,17 @@ export default {
         this.$message.error('未指定服务器ID，无法完成初始化');
         return;
       }
-      
+
       try {
         this.loading = true;
         this.commandOutput = '正在加载规则信息...\n';
-        
+
         await this.clearServerCacheAfterChange();
         await this.refreshBlockList();
         await this.refreshSSHPort();
         await this.refreshInboundPorts();
         await this.refreshInboundIPs();
-        
+
         this.initializationSteps[3].done = true;
         this.isInitialized = true;
         this.$message.success('初始化完成');
@@ -1641,34 +1460,34 @@ export default {
         this.$message.error('未指定服务器ID，无法检查脚本');
         return;
       }
-      
+
       try {
         this.debugging = true;
         this.debugInfo = '正在检查脚本存在状态...\n';
-        
+
         const commands = [
           'ls -la /root/iPtato.sh',
           'ls -la /root/iptato.sh',
           'find /root -name "*.sh" | grep -i iptato',
           'find / -name "*.sh" -type f -not -path "*/\\.*" | grep -i iptato 2>/dev/null'
         ];
-        
+
         for (const command of commands) {
           this.debugInfo += `\n执行命令: ${command}\n`;
           const response = await this.$store.dispatch('servers/executeCommand', {
             serverId: this.serverId,
             command
           });
-          
+
           if (response && response.success) {
             const stdout = response.data?.stdout || '';
             const stderr = response.data?.stderr || '';
-            
+
             this.debugInfo += `输出:\n${stdout}\n`;
             if (stderr) {
               this.debugInfo += `错误:\n${stderr}\n`;
             }
-            
+
             if (stdout && (stdout.includes('iPtato.sh') || stdout.includes('iptato.sh'))) {
               this.debugInfo += '\n检测到脚本存在！但前端应用未能识别。\n';
               this.debugInfo += '这可能是脚本命名不一致或路径不同导致的问题。\n';
@@ -1679,17 +1498,17 @@ export default {
             this.debugInfo += `命令执行失败: ${response?.error || '未知错误'}\n`;
           }
         }
-        
+
         this.debugInfo += '\n尝试直接执行脚本...\n';
         const execResponse = await this.$store.dispatch('servers/executeCommand', {
           serverId: this.serverId,
           command: 'cd /root && (./iPtato.sh --help || ./iptato.sh --help || echo "无法执行脚本")'
         });
-        
+
         if (execResponse && execResponse.success) {
           const stdout = execResponse.data?.stdout || '';
           this.debugInfo += `执行脚本输出:\n${stdout}\n`;
-          
+
           if (stdout.includes('管理脚本') || stdout.includes('iptables')) {
             this.debugInfo += '\n脚本可以成功执行！\n';
             this.debugInfo += '建议使用手动初始化功能完成后续步骤。\n';
@@ -1710,11 +1529,11 @@ export default {
         this.$message.error('未指定服务器ID，无法测试连接');
         return;
       }
-      
+
       try {
         this.debugging = true;
         this.debugInfo = '正在测试服务器连接...\n';
-        
+
         this.debugInfo += '1. 检查服务器信息:\n';
         const serverResponse = await this.getServer(this.serverId);
         if (serverResponse && serverResponse.success) {
@@ -1723,7 +1542,7 @@ export default {
         } else {
           this.debugInfo += `获取服务器信息失败: ${serverResponse?.error || '未知错误'}\n`;
         }
-        
+
         this.debugInfo += '\n尝试重新连接服务器...\n';
         try {
           const connectResponse = await this.connectServer(this.serverId);
@@ -1735,13 +1554,13 @@ export default {
         } catch (connError) {
           this.debugInfo += `重新连接出错: ${connError.message}\n`;
         }
-        
+
         this.debugInfo += '\n2. 执行简单命令测试:\n';
         const commandResponse = await this.$store.dispatch('servers/executeCommand', {
           serverId: this.serverId,
           command: 'uname -a && whoami && pwd'
         });
-        
+
         if (commandResponse && commandResponse.success) {
           this.debugInfo += `命令输出:\n${commandResponse.data?.stdout || ''}\n`;
           this.debugInfo += `命令成功执行，服务器连接正常\n`;
@@ -1749,19 +1568,19 @@ export default {
           this.debugInfo += `命令执行失败: ${commandResponse?.error || '未知错误'}\n`;
           this.debugInfo += `服务器连接可能存在问题\n`;
         }
-        
+
         this.debugInfo += '\n3. 检查前后端连接配置:\n';
         const baseURL = process.env.VUE_APP_API_URL || window.location.origin;
         this.debugInfo += `API基础URL: ${baseURL}\n`;
         this.debugInfo += `当前连接模式: ${process.env.NODE_ENV}\n`;
-        
+
         this.debugInfo += '\n4. 检查网络连接:\n';
         try {
           const pingResponse = await this.$store.dispatch('servers/executeCommand', {
             serverId: this.serverId,
             command: 'ping -c 3 8.8.8.8'
           });
-          
+
           if (pingResponse && pingResponse.success) {
             this.debugInfo += `ping测试结果:\n${pingResponse.data?.stdout || ''}\n`;
           } else {
@@ -1770,7 +1589,7 @@ export default {
         } catch (error) {
           this.debugInfo += `ping测试错误: ${error.message}\n`;
         }
-        
+
         this.$message.info('连接测试完成，请查看调试信息');
       } catch (error) {
         this.debugInfo += `\n测试过程出错: ${error.message}\n`;
@@ -1784,26 +1603,26 @@ export default {
         this.$message.error('未指定服务器ID，无法重置状态');
         return;
       }
-      
+
       try {
         this.debugging = true;
         this.debugInfo = '正在重置连接状态...\n';
-        
+
         try {
           this.debugInfo += '尝试断开当前连接...\n';
           const disconnectCommand = await this.$store.dispatch('servers/executeCommand', {
             serverId: this.serverId,
             command: 'echo "测试连接状态重置"'
           });
-          
-          this.debugInfo += '断开连接测试命令执行结果: ' + 
+
+          this.debugInfo += '断开连接测试命令执行结果: ' +
             (disconnectCommand?.success ? '成功' : '失败') + '\n';
         } catch (disconnectError) {
           this.debugInfo += `断开连接测试出错: ${disconnectError.message}\n`;
         }
-        
+
         this.debugInfo += '尝试重新连接服务器...\n';
-        
+
         try {
           const connectResponse = await this.connectServer(this.serverId);
           if (connectResponse && connectResponse.success) {
@@ -1814,11 +1633,11 @@ export default {
         } catch (connError) {
           this.debugInfo += `重新连接出错: ${connError.message}\n`;
         }
-        
+
         this.resetInitSteps();
         this.isInitialized = false;
         this.initStepActive = 0;
-        
+
         await this.checkInitialization();
         this.debugInfo += '初始化状态已重置，并重新检查\n';
         this.$message.success('连接状态已重置');
@@ -1834,20 +1653,20 @@ export default {
         this.$message.error('未指定服务器ID，无法初始化');
         return;
       }
-      
+
       try {
         this.loading = true;
         this.commandOutput = '正在手动初始化...\n';
-        
+
         this.initializationSteps.forEach(step => step.done = true);
         this.isInitialized = true;
-        
+
         await this.clearServerCacheAfterChange();
         await this.refreshBlockList();
         await this.refreshSSHPort();
         await this.refreshInboundPorts();
         await this.refreshInboundIPs();
-        
+
         this.commandOutput += '手动初始化完成，已跳过脚本检查\n';
         this.$message.success('手动初始化完成');
       } catch (error) {
@@ -1857,27 +1676,27 @@ export default {
         this.loading = false;
       }
     },
-    
+
     async generateManualCommands() {
       if (!this.hasValidServerId) {
         this.$message.error('未指定服务器ID，无法生成命令');
         return;
       }
-      
+
       try {
         this.debugging = true;
         this.debugInfo = '以下是您可以直接在服务器上执行的命令：\n\n';
-        
+
         this.debugInfo += '## 1. 部署iPtato脚本\n';
         this.debugInfo += '```\n';
         this.debugInfo += 'cd ~ && wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh\n';
         this.debugInfo += '```\n\n';
-        
+
         this.debugInfo += '## 2. 测试iPtato脚本\n';
         this.debugInfo += '```\n';
         this.debugInfo += './iPtato.sh\n';
         this.debugInfo += '```\n\n';
-        
+
         this.debugInfo += '## 3. 常用操作命令\n';
         this.debugInfo += '```\n';
         this.debugInfo += '# 阻止BT/PT流量\n';
@@ -1887,14 +1706,14 @@ export default {
         this.debugInfo += '# 查看当前封禁列表\n';
         this.debugInfo += './iPtato.sh 101\n';
         this.debugInfo += '```\n\n';
-        
+
         this.debugInfo += '## 使用方法\n';
         this.debugInfo += '1. 通过SSH工具连接到您的服务器\n';
         this.debugInfo += '2. 复制并粘贴上述命令到SSH终端执行\n';
         this.debugInfo += '3. 执行完成后，返回此界面点击"跳过检查直接初始化"按钮\n\n';
-        
+
         this.debugInfo += '如果您成功执行了这些命令，请点击页面上的"跳过检查直接初始化"按钮，这样可以绕过自动部署和检查过程，直接使用界面管理规则。\n';
-        
+
         this.$message.success('已生成手动执行命令，请查看调试信息');
       } catch (error) {
         this.debugInfo += `\n生成命令过程出错: ${error.message}\n`;
@@ -1908,17 +1727,17 @@ export default {
         this.$message.error('未指定服务器ID，无法执行部署操作');
         return;
       }
-      
+
       try {
         this.loadingDeployment = true; // 使用专用loading状态
         this.commandOutput = '正在部署脚本...\n';
-        
+
         const response = await this.deployIptato(this.serverId);
-        
+
         if (response && response.success) {
           this.$message.success('脚本部署成功');
           this.commandOutput += '\n脚本部署成功';
-          
+
           // 部署成功后重新加载规则数据
           await this.clearServerCacheAfterChange();
           await this.refreshAllData();
@@ -1953,11 +1772,11 @@ export default {
       if (this.sshPort && this.sshPort === parseInt(port, 10)) {
         return true;
       }
-      
+
       if (this.server && this.server.port === parseInt(port, 10)) {
         return true;
       }
-      
+
       // 由于SSH默认是22端口，也认为它是SSH端口
       return parseInt(port, 10) === 22;
     },
@@ -1969,13 +1788,13 @@ export default {
             if (response && response.success) {
               const newStatus = response.data.status;
               const oldStatus = this.server ? this.server.status : null;
-              
+
               this.server = response.data;
-              
+
               if (oldStatus !== 'online' && newStatus === 'online') {
                 this.$message.success('服务器已恢复在线状态');
               }
-              
+
               if (oldStatus === 'online' && newStatus !== 'online') {
                 this.$message.warning('服务器已离线，无法管理防火墙规则');
               }
@@ -1986,7 +1805,6 @@ export default {
         }
       }, 30000);
     },
-    
     stopServerStatusCheck() {
       if (this.statusCheckTimer) {
         clearInterval(this.statusCheckTimer);
@@ -1998,13 +1816,13 @@ export default {
         this.$message.error('未指定服务器ID，无法连接服务器');
         return;
       }
-      
+
       try {
         this.connecting = true;
         this.commandOutput = '正在尝试连接服务器...\n';
-        
+
         const connectResponse = await this.connectServer(this.serverId);
-        
+
         if (connectResponse && connectResponse.success) {
           this.$message.success('服务器连接成功');
           this.commandOutput += '\n服务器连接成功';
@@ -2029,42 +1847,42 @@ export default {
       if (!this.hasValidServerId) {
         return false;
       }
-      
+
       try {
         const updateResponse = await this.getCacheLastUpdate(this.serverId);
         if (!updateResponse.success) {
           console.log('服务器缓存不存在或无法访问');
           return false;
         }
-        
+
         this.serverCacheLastUpdate = updateResponse.data.lastUpdate;
         this.serverCacheAvailable = true;
-        
+
         const cacheResponse = await this.getServerCache(this.serverId);
         if (!cacheResponse.success) {
           return false;
         }
-        
+
         const cache = cacheResponse.data;
-        
+
         if (cache.data.blockList) {
           this.blockList = cache.data.blockList;
           this.dataCache.blockList = cache.data.blockList;
           this.cacheTimestamps.blockList = Date.now();
           this.dataLoaded.blockList = true;
         }
-        
+
         if (cache.data.sshPortStatus) {
           this.sshPortStatus = cache.data.sshPortStatus;
           this.dataCache.sshPortStatus = cache.data.sshPortStatus;
           this.cacheTimestamps.sshPortStatus = Date.now();
           this.dataLoaded.sshPortStatus = true;
-          
+
           try {
             if (typeof cache.data.sshPortStatus === 'string') {
-              const portMatch = cache.data.sshPortStatus.match(/SSH端口\s*[:：]\s*(\d+)/i) || 
-                            cache.data.sshPortStatus.match(/端口\s*[:：]\s*(\d+)/i) || 
-                            cache.data.sshPortStatus.match(/port\s*[:：]\s*(\d+)/i);
+              const portMatch = cache.data.sshPortStatus.match(/SSH端口\s*[:：]\s*(\d+)/i) ||
+                cache.data.sshPortStatus.match(/端口\s*[:：]\s*(\d+)/i) ||
+                cache.data.sshPortStatus.match(/port\s*[:：]\s*(\d+)/i);
               if (portMatch && portMatch[1]) {
                 this.sshPort = parseInt(portMatch[1], 10);
               }
@@ -2073,30 +1891,30 @@ export default {
             console.error('解析SSH端口出错:', e);
           }
         }
-        
+
         if (cache.data.inboundPorts) {
           // 处理inboundPorts数据格式，确保与refreshInboundPorts方法一致
           const portsData = cache.data.inboundPorts;
           const uniquePorts = [...new Set([...(portsData.tcp || []), ...(portsData.udp || [])])];
-          const formattedPorts = uniquePorts.map(port => ({ 
-            port, 
-            protocol: 'TCP|UDP' 
+          const formattedPorts = uniquePorts.map(port => ({
+            port,
+            protocol: 'TCP|UDP'
           }));
           this.inboundPorts = formattedPorts;
           this.dataCache.inboundPorts = formattedPorts;
           this.cacheTimestamps.inboundPorts = Date.now();
           this.dataLoaded.inboundPorts = true;
         }
-        
+
         if (cache.data.inboundIPs) {
-          this.inboundIPs = Array.isArray(cache.data.inboundIPs) 
+          this.inboundIPs = Array.isArray(cache.data.inboundIPs)
             ? cache.data.inboundIPs.map(ip => typeof ip === 'string' ? { ip } : ip)
             : [];
           this.dataCache.inboundIPs = this.inboundIPs;
           this.cacheTimestamps.inboundIPs = Date.now();
           this.dataLoaded.inboundIPs = true;
         }
-        
+
         console.log('已成功加载服务器缓存数据');
         this.commandOutput = '已加载缓存数据';
         return true;
@@ -2107,19 +1925,19 @@ export default {
     },
     async clearServerCacheAfterChange() {
       if (!this.hasValidServerId) return;
-      
+
       try {
         // 后端服务器缓存清理
         await this.clearServerCache(this.serverId);
         this.serverCacheAvailable = false;
         this.serverCacheLastUpdate = null;
-        
+
         // 前端缓存清理
         Object.keys(this.cacheTimestamps).forEach(key => {
           this.cacheTimestamps[key] = 0;
           this.dataCache[key] = null;
         });
-        
+
         console.log('服务器和前端缓存已清除');
       } catch (error) {
         console.error('清除服务器缓存失败:', error);
@@ -2127,24 +1945,24 @@ export default {
     },
     async updateServerCacheItem(cacheKey, data) {
       if (!this.hasValidServerId) return;
-      
+
       try {
         // 先从本地缓存中获取最新数据
         const cacheResponse = await this.getServerCache(this.serverId);
         if (cacheResponse && cacheResponse.success) {
           const cache = cacheResponse.data;
-          
+
           // 构建更新后的数据结构
           const updateData = { ...cache.data };
           updateData.data[cacheKey] = data;
-          
+
           // 调用后端API更新缓存项
           const response = await this.$store.dispatch('rules/updateCacheItem', {
             serverId: this.serverId,
             key: cacheKey,
             value: data
           });
-          
+
           if (response && response.success) {
             console.log(`服务器缓存项 ${cacheKey} 已更新`);
           } else {
@@ -2154,18 +1972,18 @@ export default {
       } catch (error) {
         console.error(`更新服务器缓存项 ${cacheKey} 出错:`, error);
       }
-      
+
       // 同时更新前端本地缓存
       this.invalidateCache(cacheKey);
     },
     // 添加自动重置连接状态方法，与用户手动点击重置按钮调用的方法区分开
     async autoResetConnectionState() {
       if (!this.hasValidServerId) return false;
-      
+
       try {
         this.commandOutput = '正在自动重置连接状态...';
         this.loading = true;
-        
+
         // 尝试重新连接服务器
         const connectResponse = await this.connectServer(this.serverId);
         if (connectResponse && connectResponse.success) {
@@ -2192,17 +2010,17 @@ export default {
         this.$message.error('未指定服务器ID，无法获取防御状态');
         return;
       }
-      
+
       try {
         this.loadingDefenseStatus = true;
         const response = await this.getDefenseStatus(this.serverId);
-        
+
         if (response && response.success) {
           this.defenseStatus = response.data || '无防御状态数据';
           this.dataCache.defenseStatus = this.defenseStatus;
           this.cacheTimestamps.defenseStatus = Date.now();
           this.dataLoaded.defenseStatus = true;
-          
+
           // 更新服务器缓存
           await this.updateServerCacheItem('defenseStatus', this.defenseStatus);
         } else {
@@ -2223,13 +2041,12 @@ export default {
       this.ipToManage = '';
       this.ipDuration = 0;
     },
-    
     async addToWhitelist() {
       if (!this.ipToManage) {
         this.$message.warning('请输入IP地址');
         return;
       }
-      
+
       try {
         console.log('[调试] 准备添加IP到白名单:', this.ipToManage);
         await this.manageIP(1);
@@ -2238,13 +2055,13 @@ export default {
         this.$message.error(`添加失败: ${error.message}`);
       }
     },
-    
+
     async addToBlacklist() {
       if (!this.ipToManage) {
         this.$message.warning('请输入IP地址');
         return;
       }
-      
+
       try {
         console.log('[调试] 准备添加IP到黑名单:', this.ipToManage);
         await this.manageIP(2);
@@ -2253,46 +2070,45 @@ export default {
         this.$message.error(`添加失败: ${error.message}`);
       }
     },
-    
     async removeFromWhitelist() {
       if (!this.ipToManage) {
         this.$message.warning('请输入IP地址');
         return;
       }
-      
+
       await this.manageIP(3);
     },
-    
+
     async removeFromBlacklist() {
       if (!this.ipToManage) {
         this.$message.warning('请输入IP地址');
         return;
       }
-      
+
       await this.manageIP(4);
     },
-    
+
     async manageIP(actionType) {
       try {
         this.loading = true;
-        
+
         const data = {
           actionType,
           ip: this.ipToManage,
           duration: this.ipDuration || 0
         };
-        
+
         console.log(`[调试] 准备发送IP操作请求: actionType=${actionType}, ip=${this.ipToManage}, duration=${this.ipDuration || 0}`);
         console.log(`[调试] 服务器ID: ${this.serverId}`);
-        
+
         // 明确使用$store.dispatch直接调用action，避免冲突
         const response = await this.$store.dispatch('rules/manageIpLists', {
           serverId: this.serverId,
           data
         });
-        
+
         console.log(`[调试] 收到响应:`, response);
-        
+
         if (response && response.success) {
           let actionName = '';
           switch (actionType) {
@@ -2309,7 +2125,7 @@ export default {
               actionName = '从黑名单移除';
               break;
           }
-          
+
           this.$message.success(`IP ${this.ipToManage} ${actionName}成功`);
           this.ipManageResult = response.data || `IP ${this.ipToManage} ${actionName}成功`;
         } else {
@@ -2328,9 +2144,9 @@ export default {
     async setupDdosProtectionAction() {
       try {
         this.loading = true;
-        
+
         const response = await this.setupDdosProtection(this.serverId);
-        
+
         if (response && response.success) {
           this.$message.success('DDoS防御规则配置成功');
           this.commandOutput = response.data || 'DDoS防御规则配置成功';
@@ -2346,16 +2162,16 @@ export default {
         this.loading = false;
       }
     },
-    
+
     async setupCustomPortProtectionAction() {
       if (!this.customDdosPort) {
         this.$message.warning('请输入端口号');
         return;
       }
-      
+
       try {
         this.loading = true;
-        
+
         const data = {
           port: this.customDdosPort,
           protoType: this.customDdosProtoType,
@@ -2364,12 +2180,12 @@ export default {
           maxRateSec: this.customDdosMaxRateSec,
           banHours: this.customDdosBanHours
         };
-        
+
         const response = await this.setupCustomPortProtection({
           serverId: this.serverId,
           data
         });
-        
+
         if (response && response.success) {
           this.$message.success(`端口 ${this.customDdosPort} DDoS防御配置成功`);
           this.commandOutput = response.data || `端口 ${this.customDdosPort} DDoS防御配置成功`;
@@ -2385,7 +2201,7 @@ export default {
         this.loading = false;
       }
     },
-    
+
     showIpListsDialog() {
       this.showManageIpLists();
     },
@@ -2401,7 +2217,7 @@ export default {
           serverId: this.serverId,
           ports: port
         });
-        
+
         if (response && response.success) {
           this.$message.success(`成功取消放行端口: ${port}`);
           this.invalidateCache('inboundPorts');
@@ -2423,10 +2239,10 @@ export default {
         this.$message.error('未指定服务器ID，无法刷新数据');
         return;
       }
-      
+
       try {
         this.loading = true;
-        
+
         // 并行执行所有刷新任务
         await Promise.all([
           this.refreshBlockList(),
@@ -2434,7 +2250,7 @@ export default {
           this.refreshInboundPorts(),
           this.refreshInboundIPs()
         ]);
-        
+
         this.$message.success('数据刷新成功');
       } catch (error) {
         this.$message.error(`刷新数据失败: ${error.message}`);
@@ -2448,30 +2264,30 @@ export default {
         this.$message.error('未指定服务器ID，无法刷新数据');
         return;
       }
-      
+
       if (!dataTypes || dataTypes.length === 0) {
         return;
       }
-      
+
       try {
         const refreshTasks = [];
-        
+
         if (dataTypes.includes('blockList')) {
           refreshTasks.push(this.refreshBlockList());
         }
-        
+
         if (dataTypes.includes('sshPortStatus')) {
           refreshTasks.push(this.refreshSSHPort());
         }
-        
+
         if (dataTypes.includes('inboundPorts')) {
           refreshTasks.push(this.refreshInboundPorts());
         }
-        
+
         if (dataTypes.includes('inboundIPs')) {
           refreshTasks.push(this.refreshInboundIPs());
         }
-        
+
         await Promise.all(refreshTasks);
       } catch (error) {
         console.error(`刷新选定数据失败: ${error.message}`);
@@ -2480,8 +2296,8 @@ export default {
     // 修改缓存验证方法
     isCacheValid(cacheKey) {
       const now = Date.now();
-      return this.dataCache[cacheKey] && 
-             (now - this.cacheTimestamps[cacheKey]) < this.cacheTTL[cacheKey];
+      return this.dataCache[cacheKey] &&
+        (now - this.cacheTimestamps[cacheKey]) < this.cacheTTL[cacheKey];
     }
   },
   watch: {
@@ -2505,7 +2321,7 @@ export default {
       }
     },
     // 添加服务器状态监控
-    'server.status': function(newStatus, oldStatus) {
+    'server.status': function (newStatus, oldStatus) {
       if (newStatus === 'online' && oldStatus !== 'online') {
         // 服务器刚刚上线，刷新所有数据
         this.refreshAllData();
@@ -2560,6 +2376,7 @@ export default {
 .initialization-card {
   margin-bottom: 20px;
 }
+
 .initialization-actions {
   display: flex;
   justify-content: center;
@@ -2622,4 +2439,4 @@ export default {
 .server-offline h3 {
   margin-bottom: 20px;
 }
-</style> 
+</style>
