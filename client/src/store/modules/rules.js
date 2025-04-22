@@ -101,22 +101,6 @@ const actions = {
     }
   },
   
-  // 封禁BT/PT
-  async blockBTPTAction({ commit }, serverId) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/${serverId}/block/bt-pt`);
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
-  },
-  
   // 封禁SPAM
   async blockSPAMAction({ commit }, serverId) {
     commit('setLoading', true);
@@ -132,22 +116,7 @@ const actions = {
       commit('setLoading', false);
     }
   },
-  
-  // 封禁BT/PT+SPAM
-  async blockAllAction({ commit }, serverId) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/${serverId}/block/all`);
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
-  },
+
   
   // 封禁自定义端口
   async blockCustomPortsAction({ commit }, { serverId, ports }) {
@@ -165,37 +134,6 @@ const actions = {
     }
   },
   
-  // 封禁自定义关键词
-  async blockCustomKeywordAction({ commit }, { serverId, keyword }) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/${serverId}/block/keyword`, { keyword });
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
-  },
-  
-  // 解封BT/PT
-  async unblockBTPTAction({ commit }, serverId) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/${serverId}/unblock/bt-pt`);
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
-  },
   
   // 解封SPAM
   async unblockSPAMAction({ commit }, serverId) {
@@ -213,22 +151,6 @@ const actions = {
     }
   },
   
-  // 解封BT/PT+SPAM
-  async unblockAllAction({ commit }, serverId) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/${serverId}/unblock/all`);
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
-  },
-  
   // 解封自定义端口
   async unblockCustomPortsAction({ commit }, { serverId, ports }) {
     commit('setLoading', true);
@@ -236,38 +158,6 @@ const actions = {
     
     try {
       const response = await axios.post(`${API_URL}/${serverId}/unblock/ports`, { ports });
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
-  },
-  
-  // 解封自定义关键词
-  async unblockCustomKeywordAction({ commit }, { serverId, keyword }) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/${serverId}/unblock/keyword`, { keyword });
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
-  },
-  
-  // 解封所有关键词
-  async unblockAllKeywordsAction({ commit }, serverId) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/${serverId}/unblock/all-keywords`);
       return response.data;
     } catch (error) {
       commit('setError', error.response ? error.response.data.message : error.message);

@@ -467,7 +467,6 @@ export default {
       customPorts: '',
       customKeyword: '',
       customUnblockPorts: '',
-      customUnblockKeyword: '',
       portToAllow: '',
       ipToAllow: '',
       isInitialized: false,
