@@ -48,7 +48,7 @@ Gnftato/
 │   ├── middlewares/        # 中间件
 │   │   ├── authMiddleware.js # 认证中间件，处理API访问权限验证
 │   ├── scripts/            # 脚本文件
-│   │   ├── Nftato.sh       # 在远程服务器上执行的nftables操作脚本
+│   │   ├── Nftato.sh       # nftables核心主脚本备份
 │   │   ├── createAdmin.js  # 创建管理员用户脚本
 │   ├── data/               # 数据存储目录，用于JSON文件存储
 │   ├── public/             # 静态资源
@@ -56,7 +56,7 @@ Gnftato/
 │   ├── config.json         # 应用配置文件
 │   ├── start.sh            # 后端启动脚本
 │   ├── nodemon.json        # Nodemon配置，用于开发环境
-├── Nftato.sh               # nftables管理主脚本
+├── Nftato.sh               # nftables核心主脚本
 ├── intcentos.sh            # CentOS系统安装脚本（仅测试）
 ├── start-all.sh            # 前后端一键启动脚本
 ├── Dockerfile              # Docker配置文件，用于容器化部署

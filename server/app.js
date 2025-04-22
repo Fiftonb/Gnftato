@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const socketIO = require('socket.io');
 
 // 尝试加载环境变量
 const dotenvPath = path.join(__dirname, '../.env');
@@ -43,6 +45,9 @@ const authRoutes = require('./routes/authRoutes');
 
 // 创建Express应用
 const app = express();
+
+// 创建HTTP服务器
+const server = http.createServer(app);
 
 // CORS配置
 const corsOptions = {
@@ -118,6 +123,36 @@ if (fs.existsSync(sourceScriptPath) && !fs.existsSync(targetScriptPath)) {
   fs.copyFileSync(sourceScriptPath, targetScriptPath);
 }
 
+// 创建Socket.IO实例
+const io = socketIO(server, {
+  cors: {
+    origin: corsOptions.origin,
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
+// 将io实例添加到app对象，以便在路由中访问
+app.io = io;
+
+// 配置Socket.IO连接
+io.on('connection', (socket) => {
+  console.log('WebSocket客户端连接: ', socket.id);
+  
+  // 断开连接处理
+  socket.on('disconnect', () => {
+    console.log('WebSocket客户端断开连接: ', socket.id);
+  });
+  
+  // 加入部署房间
+  socket.on('join_deploy_room', (data) => {
+    if (data && data.roomId) {
+      socket.join(data.roomId);
+      console.log(`客户端 ${socket.id} 加入部署房间: ${data.roomId}`);
+    }
+  });
+});
+
 // API路由
 app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
@@ -141,8 +176,9 @@ app.use((err, req, res, next) => {
 // 启动服务器
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
-app.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, () => {
   console.log(`服务器运行在 http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  console.log(`WebSocket服务已启动`);
   if (HOST === '0.0.0.0') {
     console.log(`在Docker或远程环境中，可通过服务器IP访问：http://服务器IP:${PORT}`);
   }

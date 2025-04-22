@@ -432,9 +432,13 @@ exports.checkServerStatus = async (req, res) => {
  * 部署Nftato脚本到服务器
  */
 exports.deployIptato = async (req, res) => {
+  // 创建一个独立的响应已发送标记，避免重复发送响应
+  let responseSent = false;
+  
   try {
+    const serverId = req.params.id;
     // 检查服务器是否存在
-    const server = await Server.findById(req.params.id);
+    const server = await Server.findById(serverId);
     if (!server) {
       return res.status(404).json({
         success: false,
@@ -443,20 +447,74 @@ exports.deployIptato = async (req, res) => {
     }
 
     // 检查服务器是否已连接
-    if (!sshService.connections[req.params.id]) {
+    if (!sshService.connections[serverId]) {
       return res.status(400).json({
         success: false,
         message: '服务器未连接，请先连接服务器'
       });
     }
 
-    // 部署脚本（通过wget从GitHub下载）
-    const result = await sshService.deployIptato(req.params.id);
+    // 检查是否需要使用WebSocket
+    const useWebSocket = req.query.useWebSocket === 'true' || req.body.useWebSocket === true;
     
-    res.status(200).json({
-      success: true,
-      message: '脚本部署成功'
-    });
+    if (useWebSocket && req.app.io) {
+      // 立即发送初始响应，表示部署已开始
+      res.status(200).json({
+        success: true,
+        message: '脚本部署已开始，请通过WebSocket接收进度',
+        useWebSocket: true
+      });
+      responseSent = true;
+      
+      // 创建一个WebSocket房间ID，基于serverId和时间戳
+      const roomId = `deploy_${serverId}_${Date.now()}`;
+      
+      // 通知前端WebSocket连接信息
+      req.app.io.emit('deploy_start', { 
+        serverId, 
+        roomId,
+        message: '开始部署过程，请等待...'
+      });
+      
+      // 创建进度回调函数，通过WebSocket发送进度
+      const progressCallback = (data) => {
+        req.app.io.emit(roomId, data);
+      };
+      
+      // 开始部署过程
+      try {
+        await sshService.deployIptato(serverId, progressCallback);
+        // 部署完成，发送最终状态
+        req.app.io.emit(roomId, { 
+          type: 'complete',
+          success: true,
+          message: '脚本部署成功完成！'
+        });
+      } catch (deployError) {
+        console.error('部署过程中出错:', deployError);
+        // 发送错误信息
+        req.app.io.emit(roomId, { 
+          type: 'error',
+          success: false,
+          message: `部署失败: ${deployError.message}`
+        });
+      } finally {
+        // 发送关闭信号
+        setTimeout(() => {
+          req.app.io.emit(roomId, { type: 'close' });
+        }, 1000);
+      }
+    } else {
+      // 常规非WebSocket部署，直接执行并等待结果
+      await sshService.deployIptato(serverId);
+      
+      if (!responseSent) {
+        res.status(200).json({
+          success: true,
+          message: '脚本部署成功'
+        });
+      }
+    }
   } catch (error) {
     console.error('部署脚本错误:', error);
     
@@ -470,12 +528,14 @@ exports.deployIptato = async (req, res) => {
     };
     console.error('详细部署脚本错误信息:', JSON.stringify(errorDetails, null, 2));
     
-    res.status(500).json({
-      success: false,
-      message: '部署Nftato脚本失败',
-      error: error.message,
-      errorDetails: process.env.NODE_ENV === 'production' ? undefined : errorDetails
-    });
+    if (!responseSent) {
+      res.status(500).json({
+        success: false,
+        message: '部署Nftato脚本失败',
+        error: error.message,
+        errorDetails: process.env.NODE_ENV === 'production' ? undefined : errorDetails
+      });
+    }
   }
 };
 
@@ -552,6 +612,65 @@ exports.getServerLogs = async (req, res) => {
     res.status(500).json({
       success: false,
       message: '获取服务器日志失败',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * 检查Nftato脚本是否已存在于服务器
+ */
+exports.checkScriptExists = async (req, res) => {
+  try {
+    const serverId = req.params.id;
+    console.log(`检查服务器 ${serverId} 是否已部署Nftato脚本`);
+    
+    // 检查服务器是否存在
+    const server = await Server.findById(serverId);
+    if (!server) {
+      return res.status(404).json({
+        success: false,
+        message: '服务器未找到'
+      });
+    }
+
+    // 检查服务器是否已连接
+    if (!sshService.connections[serverId]) {
+      return res.status(400).json({
+        success: false,
+        message: '服务器未连接，请先连接服务器'
+      });
+    }
+
+    // 检查连接是否有效
+    if (!sshService.checkConnection(serverId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'SSH连接无效，请重新连接服务器'
+      });
+    }
+
+    // 执行检查命令
+    const result = await sshService.executeCommand(
+      serverId, 
+      'test -f ~/Nftato.sh && echo "exists_home" || test -f /root/Nftato.sh && echo "exists_root" || echo "not_found"'
+    );
+
+    const scriptExists = result.stdout.includes('exists_home') || result.stdout.includes('exists_root');
+    const location = result.stdout.includes('exists_home') ? '~/Nftato.sh' : 
+                    result.stdout.includes('exists_root') ? '/root/Nftato.sh' : '';
+
+    res.status(200).json({
+      success: true,
+      exists: scriptExists,
+      location: location,
+      message: scriptExists ? 'Nftato脚本已部署' : 'Nftato脚本未部署'
+    });
+  } catch (error) {
+    console.error('检查脚本存在状态失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '检查脚本存在状态失败',
       error: error.message
     });
   }

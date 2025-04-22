@@ -4,9 +4,9 @@
       <h1>防火墙规则管理</h1>
       <div>
         <el-button type="primary" @click="$router.push('/servers')">返回服务器列表</el-button>
-        <el-button v-if="isServerOnline" type="success" @click="deployIptatoScript"
+        <el-button v-if="isServerOnline && !scriptExists" type="success" @click="deployScript"
           :loading="deploying">部署脚本</el-button>
-        <el-button v-if="isServerOnline" type="danger" @click="confirmClearRules">清空所有规则</el-button>
+        <el-button v-if="isServerOnline && scriptExists" type="danger" @click="confirmClearRules">清空所有规则</el-button>
         <el-button v-if="!isServerOnline && server" type="warning" @click="tryConnectServer"
           :loading="connecting">连接服务器</el-button>
       </div>
@@ -18,7 +18,51 @@
       <p>{{ server.host }}:{{ server.port }} ({{ server.username }})</p>
     </div>
 
-    <el-tabs v-model="activeTab" type="card">
+    <!-- 添加脚本部署状态检测区域 -->
+    <div v-if="!scriptCheckLoading && !scriptExists && isServerOnline" class="script-deploy-needed">
+      <el-alert
+        title="脚本未部署"
+        type="warning"
+        description="检测到服务器上没有部署Nftato脚本，需要先部署脚本才能使用防火墙功能"
+        show-icon
+        :closable="false"
+        style="margin-bottom: 15px;">
+      </el-alert>
+      
+      <div class="deploy-container">
+        <div class="deploy-intro">
+          <i class="el-icon-warning"></i>
+          <h3>需要部署Nftato脚本</h3>
+          <p>Nftato脚本是防火墙规则管理的核心组件，使用此脚本可以更方便地管理nftables规则。</p>
+          <p>点击"开始部署"按钮开始部署过程。</p>
+        </div>
+        
+        <el-button type="success" size="large" @click="deployScript" :loading="deploying">
+          <i class="el-icon-upload"></i> 开始部署
+        </el-button>
+      </div>
+    </div>
+    
+    <!-- 脚本部署终端输出 -->
+    <div v-if="deploying && deployLogs.length > 0" class="deploy-terminal">
+      <div class="terminal-header">
+        <span>脚本部署进度</span>
+        <el-button v-if="deployComplete" size="mini" type="success" @click="deployLogs = []">关闭</el-button>
+      </div>
+      <div class="terminal-body" ref="terminalBody">
+        <div v-for="(log, index) in deployLogs" :key="index" 
+             :class="{'log-line': true, 'error-line': log.type === 'error', 'success-line': log.type === 'success'}">
+          <pre>{{ log.message }}</pre>
+        </div>
+        <div v-if="deploying && !deployComplete" class="terminal-cursor"></div>
+      </div>
+      <div class="terminal-footer" v-if="deployComplete">
+        <el-button v-if="deploySuccess" type="success" @click="refreshAllData">部署成功，加载规则数据</el-button>
+        <el-button v-else type="danger" @click="retryDeploy">部署失败，重试</el-button>
+      </div>
+    </div>
+
+    <el-tabs v-model="activeTab" type="card" v-if="scriptExists || !isServerOnline">
       <el-tab-pane label="入网控制" name="inbound">
         <template v-if="!isServerOnline">
           <el-alert title="服务器当前处于离线状态" type="warning" description="服务器离线时无法管理防火墙规则，请先连接服务器" show-icon :closable="false"
@@ -283,158 +327,22 @@
         </div>
       </el-tab-pane>
     </el-tabs>
-
-    <!-- IP黑白名单管理对话框 -->
-    <el-dialog title="IP黑白名单管理" :visible.sync="ipListsDialogVisible" width="600px" :close-on-click-modal="false">
-      <el-tabs v-model="ipListsActiveTab">
-        <el-tab-pane label="添加IP白名单" name="addWhite">
-          <el-form label-width="120px">
-            <el-form-item label="IP地址">
-              <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
-            </el-form-item>
-            <el-form-item label="有效期(天)">
-              <el-input-number v-model="ipDuration" :min="0" :max="365" :step="1"></el-input-number>
-              <span class="form-item-tip">0表示永久</span>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="addToWhitelist" :loading="loading">添加到白名单</el-button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-
-        <el-tab-pane label="添加IP黑名单" name="addBlack">
-          <el-form label-width="120px">
-            <el-form-item label="IP地址">
-              <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
-            </el-form-item>
-            <el-form-item label="有效期(小时)">
-              <el-input-number v-model="ipDuration" :min="0" :max="720" :step="1"></el-input-number>
-              <span class="form-item-tip">0表示永久</span>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="danger" @click="addToBlacklist" :loading="loading">添加到黑名单</el-button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-
-        <el-tab-pane label="从白名单移除" name="removeWhite">
-          <el-form label-width="120px">
-            <el-form-item label="IP地址">
-              <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="warning" @click="removeFromWhitelist" :loading="loading">从白名单移除</el-button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-
-        <el-tab-pane label="从黑名单移除" name="removeBlack">
-          <el-form label-width="120px">
-            <el-form-item label="IP地址">
-              <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="warning" @click="removeFromBlacklist" :loading="loading">从黑名单移除</el-button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-      </el-tabs>
-
-      <div v-if="ipManageResult" class="ip-manage-result">
-        <pre>{{ ipManageResult }}</pre>
-      </div>
-
-      <div slot="footer" class="dialog-footer">
-        <el-button @click="ipListsDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="ipListsDialogVisible = false">完成</el-button>
-      </div>
-    </el-dialog>
-
-    <el-card v-if="commandOutput" style="margin-top: 20px">
-      <div slot="header">
-        <span>命令输出</span>
-        <el-button style="float: right; padding: 3px 0" type="text" @click="clearCommandOutput">清空</el-button>
-      </div>
-      <pre :class="['output', { 'output-error': commandOutput.includes('失败') || commandOutput.includes('错误') }]">{{
-        commandOutput }}</pre>
-
-      <div v-if="commandOutput.includes('status code 500')" class="error-solution">
-        <el-alert title="发现服务器内部错误(500)" type="error" description="服务器内部错误可能由多种原因导致，建议尝试以下解决方案：" show-icon
-          :closable="false">
-        </el-alert>
-        <el-collapse style="margin-top: 10px;">
-          <el-collapse-item title="可能的解决方案" name="1">
-            <ol>
-              <li>检查服务器连接状态，确保SSH可以正常连接</li>
-              <li>尝试手动部署脚本按钮，绕过自动部署流程</li>
-              <li>检查服务器磁盘空间是否足够</li>
-              <li>查看服务器日志文件 (/var/log/syslog 或 /var/log/messages)</li>
-              <li>尝试在服务器上手动执行以下命令:</li>
-              <pre class="command-example">wget -N --no-check-certificate
-            https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh && chmod +x Nftato.sh && bash
-            Nftato.sh</pre>
-              <li>如仍无法解决，请联系管理员或提交详细错误报告</li>
-            </ol>
-          </el-collapse-item>
-        </el-collapse>
-      </div>
-    </el-card>
-
-    <el-card v-if="!isInitialized" class="initialization-card">
-      <div slot="header">
-        <span>初始化检查</span>
-      </div>
-      <el-steps :active="initStepActive" finish-status="success">
-        <el-step v-for="(step, index) in initializationSteps" :key="index" :title="step.name"></el-step>
-      </el-steps>
-      <div class="initialization-actions" style="margin-top: 20px;">
-        <el-button v-if="initStepActive === 1" type="primary" @click="connectServer"
-          :loading="connecting">连接服务器</el-button>
-        <el-button v-if="initStepActive === 2" type="primary" @click="checkInitialization"
-          :loading="deploying">自动部署脚本</el-button>
-        <el-button v-if="initStepActive === 2" type="warning" @click="deployIptatoManually"
-          :loading="deploying">手动部署脚本</el-button>
-        <el-button v-if="initStepActive === 3" type="primary" @click="completeInitialization">加载规则</el-button>
-        <el-button type="danger" @click="manualInitialize" :loading="loading">跳过检查直接初始化</el-button>
-      </div>
-      <div v-if="commandOutput && commandOutput.includes('脚本部署失败')" class="error-info"
-        style="margin-top: 15px; color: #F56C6C;">
-        <p>部署失败原因可能包括：</p>
-        <ul>
-          <li>服务器连接不稳定</li>
-          <li>服务器配置问题</li>
-          <li>网络限制阻止了脚本下载</li>
-        </ul>
-        <p>建议尝试：</p>
-        <ul>
-          <li>点击"手动部署脚本"按钮</li>
-          <li>检查服务器连接状态</li>
-          <li>查看服务器日志获取详细信息</li>
-        </ul>
-      </div>
-    </el-card>
-
-    <el-card style="margin-top: 20px;">
-      <div slot="header">
-        <span>调试工具</span>
-        <el-button style="float: right; padding: 3px 0" type="text" @click="debugInfo = ''">清空</el-button>
-      </div>
-      <el-button type="warning" @click="checkScriptExistence" :loading="debugging">检查脚本存在</el-button>
-      <el-button type="warning" @click="testServerConnection" :loading="debugging">测试服务器连接</el-button>
-      <el-button type="danger" @click="resetConnectionState" :loading="debugging">重置连接状态</el-button>
-      <el-button type="primary" @click="generateManualCommands" :loading="debugging">生成手动执行命令</el-button>
-      <el-button type="success" @click="refreshAllData" :loading="loadingRefreshAll">刷新所有数据</el-button>
-
-      <div v-if="debugInfo" class="debug-info" style="margin-top: 15px;">
-        <h4>调试信息：</h4>
-        <pre>{{ debugInfo }}</pre>
-      </div>
-    </el-card>
+    
+    <!-- 服务器在线但脚本检查仍在加载 -->
+    <div v-if="scriptCheckLoading && isServerOnline" class="loading-container">
+      <el-card>
+        <div class="loading-content">
+          <i class="el-icon-loading"></i>
+          <p>正在检查服务器脚本状态...</p>
+        </div>
+      </el-card>
+    </div>
   </div>
 </template>
 
 <script>
 import { mapActions, mapGetters } from 'vuex';
+import io from 'socket.io-client';
 
 export default {
   name: 'RulesView',
@@ -532,7 +440,16 @@ export default {
         lastAction: null,
         cooldown: false,
         timeout: 2000 // 2秒防抖时间
-      }
+      },
+      
+      // 添加以下新的数据属性
+      scriptExists: false,
+      scriptCheckLoading: true,
+      deployLogs: [],
+      socket: null,
+      deployRoomId: null,
+      deployComplete: false,
+      deploySuccess: false,
     };
   },
   computed: {
@@ -579,10 +496,6 @@ export default {
     if (this.hasValidServerId) {
       this.$nextTick(async () => {
         await this.initializeApplication();
-        // 初始化完成后，使用新的统一刷新方法
-        if (this.isInitialized && this.isServerOnline) {
-          await this.refreshAllData();
-        }
       });
 
       this.startServerStatusCheck();
@@ -592,6 +505,12 @@ export default {
   },
   beforeDestroy() {
     this.stopServerStatusCheck();
+    
+    // 清理WebSocket连接
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
   },
   methods: {
     ...mapActions('servers', [
@@ -629,15 +548,288 @@ export default {
       try {
         this.commandOutput = '正在初始化应用...';
         await this.autoResetConnectionState();
-        const initialized = await this.checkInitialization();
-
-        if (initialized) {
-          this.commandOutput += '\n初始化成功，应用已就绪';
-        } else {
-          this.handleInitializationFailure();
+        
+        if (!this.hasValidServerId) {
+          this.commandOutput = '错误：未指定服务器ID，请返回服务器列表选择服务器';
+          this.$message.error('未指定服务器ID');
+          return false;
         }
+
+        this.resetInitSteps();
+        this.isInitialized = false;
+        this.initStepActive = 0;
+
+        this.commandOutput = '正在检查服务器状态...';
+        this.loading = true;
+
+        // 步骤1: 检查服务器状态
+        const serverResponse = await this.getServer(this.serverId);
+        if (!serverResponse || !serverResponse.success) {
+          throw new Error(serverResponse?.error || '获取服务器信息失败');
+        }
+        this.server = serverResponse.data;
+        this.initializationSteps[0].done = true;
+        this.initStepActive = 1;
+        
+        // 尝试加载服务器缓存
+        const cacheLoaded = await this.loadServerCache();
+        if (cacheLoaded) {
+          this.commandOutput += '\n已成功加载服务器缓存数据';
+        }
+
+        // 步骤2: 如果服务器未连接，尝试连接
+        if (!this.server.status || this.server.status !== 'online') {
+          this.commandOutput += '\n服务器未连接，正在尝试连接...';
+          this.connecting = true;
+          try {
+            const connectResponse = await this.connectServer(this.serverId);
+            this.connecting = false;
+            
+            if (!connectResponse || !connectResponse.success) {
+              if (cacheLoaded) {
+                this.$message.warning('服务器连接失败，将使用缓存数据');
+                this.commandOutput += '\n服务器连接失败，将使用缓存数据';
+                // 标记初始化步骤完成
+                this.completeInitialization(cacheLoaded);
+                return true;
+              } else {
+                throw new Error(connectResponse?.error || '连接服务器失败');
+              }
+            }
+            this.commandOutput += '\n服务器连接成功';
+          } catch (error) {
+            this.connecting = false;
+            if (cacheLoaded) {
+              this.$message.warning(`服务器连接失败: ${error.message}，将使用缓存数据`);
+              this.commandOutput += `\n服务器连接失败: ${error.message}，将使用缓存数据`;
+              // 标记初始化步骤完成
+              this.completeInitialization(cacheLoaded);
+              return true;
+            } else {
+              throw error;
+            }
+          }
+        } else {
+          this.commandOutput += '\n服务器已连接，跳过连接步骤';
+          this.initializationSteps[1].done = true;
+          this.initStepActive = 2;
+        }
+        
+        // 步骤3: 检查脚本状态
+        this.scriptCheckLoading = true;
+        if (this.isServerOnline) {
+          try {
+            this.commandOutput += '\n检查脚本部署状态...';
+            const scriptResponse = await this.checkScriptExists(this.serverId);
+            if (scriptResponse && scriptResponse.success) {
+              this.scriptExists = scriptResponse.exists;
+              if (this.scriptExists) {
+                this.commandOutput += '\n检测到Nftato脚本已部署';
+              } else {
+                this.commandOutput += '\n未检测到Nftato脚本，需要部署';
+              }
+            } else {
+              this.$message.warning('无法确定脚本部署状态');
+              this.commandOutput += '\n无法确定脚本部署状态';
+              // 保守处理为不存在
+              this.scriptExists = false;
+            }
+          } catch (error) {
+            console.error('检查脚本状态失败:', error);
+            this.commandOutput += `\n检查脚本状态失败: ${error.message}`;
+            // 保守处理为不存在
+            this.scriptExists = false;
+          } finally {
+            this.scriptCheckLoading = false;
+          }
+        } else if (cacheLoaded) {
+          // 如果有缓存数据，假设脚本已部署
+          this.scriptExists = true;
+          this.scriptCheckLoading = false;
+        }
+        
+        // 标记初始化步骤完成
+        this.completeInitialization(cacheLoaded);
+        return true;
       } catch (error) {
-        this.handleInitializationError(error);
+        this.loading = false;
+        this.deploying = false;
+        this.connecting = false;
+        this.scriptCheckLoading = false;
+        this.commandOutput += `\n初始化失败: ${error.message}`;
+        this.$message.error(`初始化失败: ${error.message}`);
+        return false;
+      }
+    },
+    
+    // 完成初始化的辅助方法
+    completeInitialization(cacheLoaded) {
+      this.initializationSteps[2].done = true;
+      this.initStepActive = 3;
+      this.initializationSteps[3].done = true;
+      this.isInitialized = true;
+      this.loading = false;
+      
+      // 如果服务器在线且脚本已存在，加载规则数据
+      if (this.isServerOnline && this.scriptExists) {
+        this.refreshAllData();
+      } else if (cacheLoaded) {
+        // 如果有缓存数据，直接使用缓存
+        this.loadCachedData();
+      }
+    },
+    
+    // 部署脚本方法
+    async deployScript() {
+      if (!this.isServerOnline) {
+        this.$message.error('服务器离线，无法部署脚本');
+        return;
+      }
+      
+      try {
+        this.deploying = true;
+        this.deployLogs = [];
+        this.deployComplete = false;
+        this.deploySuccess = false;
+        
+        // 初始化WebSocket连接
+        this.initWebSocket();
+        
+        // 调用带WebSocket支持的部署方法
+        const response = await this.deployIptatoWithWebSocket(this.serverId);
+        
+        if (!response || !response.success) {
+          throw new Error(response?.error || '开始部署过程失败');
+        }
+        
+        // 部署已开始，日志将通过WebSocket显示
+        this.deployLogs.push({
+          type: 'log',
+          message: '脚本部署已开始，请等待...'
+        });
+        
+      } catch (error) {
+        this.deployComplete = true;
+        this.deploySuccess = false;
+        this.deploying = false;
+        this.deployLogs.push({
+          type: 'error',
+          message: `部署失败: ${error.message}`
+        });
+        this.$message.error(`部署脚本失败: ${error.message}`);
+      }
+    },
+    
+    // 初始化WebSocket连接
+    initWebSocket() {
+      // 清理可能的旧连接
+      if (this.socket) {
+        this.socket.disconnect();
+      }
+      
+      // 创建Socket.IO连接
+      const wsUrl = window.location.origin;
+      this.socket = io(wsUrl);
+      
+      // 监听连接事件
+      this.socket.on('connect', () => {
+        console.log('WebSocket连接已建立');
+        this.deployLogs.push({
+          type: 'log',
+          message: '✅ 实时部署连接已建立'
+        });
+      });
+      
+      // 监听部署开始事件
+      this.socket.on('deploy_start', (data) => {
+        console.log('收到部署开始信号:', data);
+        if (data && data.serverId === this.serverId) {
+          this.deployRoomId = data.roomId;
+          this.socket.emit('join_deploy_room', { roomId: this.deployRoomId });
+          
+          // 监听部署进度
+          this.socket.on(this.deployRoomId, (logData) => {
+            this.handleDeployLog(logData);
+          });
+        }
+      });
+      
+      // 监听连接错误
+      this.socket.on('connect_error', (error) => {
+        console.error('WebSocket连接错误:', error);
+        this.deployLogs.push({
+          type: 'error',
+          message: `WebSocket连接错误: ${error.message}`
+        });
+      });
+      
+      // 监听断开连接
+      this.socket.on('disconnect', () => {
+        console.log('WebSocket连接已断开');
+      });
+    },
+    
+    // 处理部署日志
+    handleDeployLog(logData) {
+      if (!logData) return;
+      
+      // 添加日志到显示列表
+      this.deployLogs.push(logData);
+      
+      // 滚动到底部
+      this.$nextTick(() => {
+        if (this.$refs.terminalBody) {
+          this.$refs.terminalBody.scrollTop = this.$refs.terminalBody.scrollHeight;
+        }
+      });
+      
+      // 处理特殊日志类型
+      if (logData.type === 'complete') {
+        this.deployComplete = true;
+        this.deploySuccess = true;
+        this.deploying = false;
+        
+        // 更新脚本状态
+        this.scriptExists = true;
+        
+        // 完成后删除房间监听
+        setTimeout(() => {
+          if (this.socket && this.deployRoomId) {
+            this.socket.off(this.deployRoomId);
+          }
+        }, 1000);
+      } else if (logData.type === 'error') {
+        this.deployComplete = true;
+        this.deploySuccess = false;
+        this.deploying = false;
+        
+        // 完成后删除房间监听
+        setTimeout(() => {
+          if (this.socket && this.deployRoomId) {
+            this.socket.off(this.deployRoomId);
+          }
+        }, 1000);
+      }
+    },
+    
+    // 重试部署
+    retryDeploy() {
+      this.deployScript();
+    },
+    
+    // 部署成功后刷新所有数据
+    refreshAllData() {
+      if (!this.isServerOnline || !this.scriptExists) return;
+      
+      // 获取当前激活的标签页相关数据
+      if (this.activeTab === 'inbound') {
+        this.refreshSSHPort();
+        this.refreshInboundPorts();
+        this.refreshInboundIPs();
+      } else if (this.activeTab === 'outbound') {
+        this.refreshBlockList();
+      } else if (this.activeTab === 'ddos') {
+        this.refreshDefenseStatus();
       }
     },
     handleInvalidServerId() {
@@ -2498,5 +2690,113 @@ export default {
 
 .server-offline h3 {
   margin-bottom: 20px;
+}
+
+/* 添加新的样式 */
+.script-deploy-needed {
+  margin: 20px 0;
+}
+
+.deploy-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.deploy-intro {
+  margin-bottom: 20px;
+}
+
+.deploy-intro i {
+  font-size: 48px;
+  color: #E6A23C;
+  margin-bottom: 10px;
+}
+
+.deploy-terminal {
+  margin: 20px 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #dcdfe6;
+  background-color: #1e1e1e;
+  color: #f0f0f0;
+}
+
+.terminal-header {
+  background-color: #2c2c2c;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #3e3e3e;
+}
+
+.terminal-body {
+  padding: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+}
+
+.log-line {
+  margin: 2px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-line pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: 'Courier New', monospace;
+}
+
+.error-line {
+  color: #f56c6c;
+}
+
+.success-line {
+  color: #67c23a;
+}
+
+.terminal-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  background-color: #f0f0f0;
+  animation: blink 1s infinite;
+  vertical-align: middle;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.terminal-footer {
+  padding: 10px;
+  text-align: center;
+  background-color: #2c2c2c;
+  border-top: 1px solid #3e3e3e;
+}
+
+.loading-container {
+  margin: 20px 0;
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 30px 0;
+}
+
+.loading-content i {
+  font-size: 32px;
+  margin-bottom: 15px;
+  color: #409EFF;
 }
 </style>

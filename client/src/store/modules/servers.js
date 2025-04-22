@@ -219,6 +219,40 @@ const actions = {
       commit('setError', error.response ? error.response.data.message : error.message);
       throw error;
     }
+  },
+  
+  /**
+   * 检查服务器上是否已部署Nftato脚本
+   */
+  async checkScriptExists({ commit }, id) {
+    commit('setError', null);
+    
+    try {
+      const response = await axios.get(`${API_URL}/${id}/checkScript`);
+      return response.data;
+    } catch (error) {
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    }
+  },
+
+  /**
+   * 使用WebSocket部署Nftato脚本
+   */
+  async deployIptatoWithWebSocket({ commit }, id) {
+    commit('setLoading', true);
+    commit('setError', null);
+    
+    try {
+      // 调用部署API，指示使用WebSocket
+      const response = await axios.post(`${API_URL}/${id}/deploy`, { useWebSocket: true });
+      return response.data;
+    } catch (error) {
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    } finally {
+      commit('setLoading', false);
+    }
   }
 };
 

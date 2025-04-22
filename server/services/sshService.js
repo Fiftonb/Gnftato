@@ -581,11 +581,12 @@ class SSHService {
   }
 
   /**
-   * 上传并执行Nftato.sh脚本
+   * 在服务器上部署Nftato脚本
    * @param {string} serverId - 服务器ID
+   * @param {function} [progressCallback] - 实时进度回调函数，用于WebSocket推送进度
    * @returns {Promise<object>} - 执行结果
    */
-  async deployIptato(serverId) {
+  async deployIptato(serverId, progressCallback = null) {
     try {
       // 查找服务器信息，用于日志记录
       const server = await Server.findById(serverId);
@@ -594,88 +595,106 @@ class SSHService {
         throw new Error('服务器未找到');
       }
       
-      console.log(`开始在服务器 ${server.name} (${server.host}) 上部署Nftato脚本`);
+      const logProgress = (message) => {
+        console.log(message);
+        // 如果提供了回调函数，则推送进度信息
+        if (typeof progressCallback === 'function') {
+          progressCallback({
+            type: 'log',
+            message: message
+          });
+        }
+      };
+      
+      logProgress(`开始在服务器 ${server.name} (${server.host}) 上部署Nftato脚本`);
       
       // 检查用户是否有root权限
+      logProgress(`检查用户权限...`);
       const checkSudo = await this.executeCommand(serverId, 'sudo -n true 2>/dev/null && echo "has_sudo" || echo "no_sudo"');
       const hasSudo = checkSudo.stdout.includes('has_sudo');
-      console.log(`用户${hasSudo ? '有' : '没有'}sudo权限`);
+      logProgress(`用户${hasSudo ? '有' : '没有'}sudo权限`);
       
       // 首先检测网络环境
+      logProgress(`检测网络环境...`);
       const checkNetworkCommand = 'ping -c2 -i0.3 -W1 www.google.com &>/dev/null && echo "global" || echo "china"';
-      console.log(`检测网络环境: ${checkNetworkCommand}`);
+      logProgress(`执行命令: ${checkNetworkCommand}`);
       
       const networkEnv = await this.executeCommand(serverId, checkNetworkCommand);
       let downloadUrl = '';
       
       // 根据网络环境选择下载URL
       if (networkEnv.stdout.includes('china')) {
-        console.log('检测到国内网络环境，使用代理下载...');
+        logProgress('检测到国内网络环境，使用代理下载...');
         downloadUrl = 'https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh';
       } else {
-        console.log('检测到可直接访问国际网络，使用原始URL下载...');
+        logProgress('检测到可直接访问国际网络，使用原始URL下载...');
         downloadUrl = 'https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh';
       }
       
       // 构建下载命令，添加重试机制
       const downloadCommand = `cd ~ && wget -N --no-check-certificate --tries=3 --timeout=15 ${downloadUrl} -O Nftato.sh && chmod +x Nftato.sh`;
-      console.log(`执行下载命令: ${downloadCommand}`);
+      logProgress(`开始下载脚本: ${downloadCommand}`);
       
       // 执行下载命令
+      logProgress(`正在下载脚本文件...`);
       const result = await this.executeCommand(serverId, downloadCommand);
       
       if (result.code !== 0) {
-        console.error(`下载脚本时发生错误，退出码: ${result.code}`);
-        console.error(`标准错误: ${result.stderr}`);
+        logProgress(`下载脚本时发生错误，退出码: ${result.code}`);
+        logProgress(`标准错误: ${result.stderr}`);
         
         // 如果失败，尝试使用备用URL
-        console.log('尝试使用备用方法下载...');
+        logProgress('尝试使用备用方法下载...');
         const fallbackCommand = networkEnv.stdout.includes('china') 
           ? `cd ~ && curl -o Nftato.sh https://cdn.jsdelivr.net/gh/Fiftonb/Gnftato@main/Nftato.sh && chmod +x Nftato.sh`
           : `cd ~ && curl -o Nftato.sh https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh && chmod +x Nftato.sh`;
           
-        console.log(`执行备用下载命令: ${fallbackCommand}`);
+        logProgress(`执行备用下载命令: ${fallbackCommand}`);
         const fallbackResult = await this.executeCommand(serverId, fallbackCommand);
         
         if (fallbackResult.code !== 0) {
-          console.error(`备用下载也失败，退出码: ${fallbackResult.code}`);
-          console.error(`标准错误: ${fallbackResult.stderr}`);
+          logProgress(`备用下载也失败，退出码: ${fallbackResult.code}`);
+          logProgress(`标准错误: ${fallbackResult.stderr}`);
           throw new Error(`下载脚本失败: ${fallbackResult.stderr || '未知错误'}`);
         }
       }
       
       // 验证脚本是否下载成功到用户目录
+      logProgress(`验证脚本下载...`);
       const checkResult = await this.executeCommand(serverId, 'test -f ~/Nftato.sh && echo "exists" || echo "not found"');
       if (checkResult.stdout.includes('not found')) {
-        console.error(`脚本下载验证失败，找不到脚本文件`);
+        logProgress(`脚本下载验证失败，找不到脚本文件`);
         throw new Error('脚本文件未成功下载到用户目录');
       }
       
+      logProgress(`脚本已成功下载到用户目录`);
+      
       // 如果有sudo权限，也复制到/root/目录
       if (hasSudo) {
-        console.log(`尝试将脚本复制到/root/目录`);
+        logProgress(`尝试将脚本复制到/root/目录`);
         await this.executeCommand(serverId, 'sudo cp ~/Nftato.sh /root/Nftato.sh && sudo chmod +x /root/Nftato.sh');
         
         // 验证脚本是否成功复制到/root/
         const rootCheck = await this.executeCommand(serverId, 'test -f /root/Nftato.sh && echo "exists" || echo "not found"');
         if (rootCheck.stdout.includes('exists')) {
-          console.log(`脚本已成功复制到/root/目录`);
+          logProgress(`脚本已成功复制到/root/目录`);
         } else {
-          console.warn(`无法复制脚本到/root/目录，将使用用户目录的脚本`);
+          logProgress(`无法复制脚本到/root/目录，将使用用户目录的脚本`);
         }
       }
       
       // 验证至少一个位置的脚本权限
+      logProgress(`验证脚本执行权限...`);
       const permResult = await this.executeCommand(serverId, '(test -x ~/Nftato.sh && echo "home executable") || (test -x /root/Nftato.sh && echo "root executable") || echo "not executable"');
       if (permResult.stdout.includes('not executable')) {
-        console.warn(`脚本权限不正确，尝试修复`);
+        logProgress(`脚本权限不正确，尝试修复`);
         await this.executeCommand(serverId, 'chmod +x ~/Nftato.sh');
         if (hasSudo) {
           await this.executeCommand(serverId, 'sudo chmod +x /root/Nftato.sh');
         }
       }
       
-      console.log(`脚本已成功下载到服务器 ${serverId}`);
+      logProgress(`脚本已成功部署到服务器 ${server.name}!`);
       
       return {
         success: true,
@@ -683,6 +702,15 @@ class SSHService {
       };
     } catch (error) {
       console.error(`部署脚本时发生错误:`, error);
+      
+      // 如果提供了回调函数，推送错误信息
+      if (typeof progressCallback === 'function') {
+        progressCallback({
+          type: 'error',
+          message: `部署失败: ${error.message}`
+        });
+      }
+      
       throw error;
     }
   }

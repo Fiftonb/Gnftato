@@ -31,4 +31,7 @@ router.get('/:id/logs', serverController.getServerLogs);
 // Nftato部署路由
 router.post('/:id/deploy', serverController.deployIptato);
 
+// 检查脚本是否存在路由
+router.get('/:id/checkScript', serverController.checkScriptExists);
+
 module.exports = router; 
