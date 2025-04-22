@@ -1968,11 +1968,13 @@ view_defense_status() {
         echo -e "总拦截连接数: ${total_drop:-0}"
         
         # 显示黑白名单IP数量
-        whitelist_ipv4=$(nft list set ip edge_dft_v4 allow_set 2>/dev/null | grep -c '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}')
-        blacklist_ipv4=$(nft list set ip edge_dft_v4 deny_set 2>/dev/null | grep -c '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}')
+        # 使用更准确的正则表达式匹配方法统计IP数量
+        whitelist_ipv4=$(nft list set ip edge_dft_v4 allow_set 2>/dev/null | grep -E -o '([0-9]{1,3}\.){3}[0-9]{1,3}( timeout [0-9]+[dhms])?' | wc -l)
+        blacklist_ipv4=$(nft list set ip edge_dft_v4 deny_set 2>/dev/null | grep -E -o '([0-9]{1,3}\.){3}[0-9]{1,3}( timeout [0-9]+[dhms])?' | wc -l)
         
-        whitelist_ipv6=$(nft list set ip6 edge_dft_v6 allow_set 2>/dev/null | grep -c ':')
-        blacklist_ipv6=$(nft list set ip6 edge_dft_v6 deny_set 2>/dev/null | grep -c ':')
+        # IPv6地址匹配也使用更准确的正则表达式
+        whitelist_ipv6=$(nft list set ip6 edge_dft_v6 allow_set 2>/dev/null | grep -E -o '([0-9a-fA-F]{1,4}(:|::)){1,7}[0-9a-fA-F]{1,4}( timeout [0-9]+[dhms])?' | wc -l)
+        blacklist_ipv6=$(nft list set ip6 edge_dft_v6 deny_set 2>/dev/null | grep -E -o '([0-9a-fA-F]{1,4}(:|::)){1,7}[0-9a-fA-F]{1,4}( timeout [0-9]+[dhms])?' | wc -l)
         
         echo -e "当前白名单IPv4数量: ${whitelist_ipv4:-0}"
         echo -e "当前白名单IPv6数量: ${whitelist_ipv6:-0}"

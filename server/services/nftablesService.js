@@ -6,6 +6,11 @@ class NftablesService {
    * @param {string} serverId - 服务器ID
    * @returns {Promise<string>} - 脚本路径
    */
+  constructor() {
+    // 用于IP黑白名单操作的锁机制
+    this.ipListsLocks = {};
+  }
+
   async _getScriptPath(serverId) {
     try {
       console.log(`[诊断] 获取脚本路径，服务器ID: ${serverId}`);
@@ -1002,38 +1007,146 @@ class NftablesService {
    */
   async manageIpLists(serverId, actionType, ip, duration) {
     try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      // 确保actionType是数字
-      const actionTypeNumber = parseInt(actionType, 10);
-      if (isNaN(actionTypeNumber)) {
+      // 检查是否已有相同IP的操作正在进行中
+      const lockKey = `${serverId}:${ip}`;
+      if (this.ipListsLocks[lockKey]) {
+        console.log(`[警告] 已有相同IP(${ip})的操作正在进行中，请稍后再试`);
         return {
           success: false,
           data: null,
-          error: `无效的操作类型: ${actionType}`
+          error: `已有相同IP(${ip})的操作正在进行中，请稍后再试`
         };
       }
-      
-      // 构造参数字符串
-      const params = `${actionTypeNumber} ${ip} ${duration || ''}`;
-      console.log(`[DEBUG] manageIpLists - 构造的参数: ${params}`);
-      
-      const result = await this._executeNftatoCommand(serverId, 24, params);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
+
+      // 设置锁
+      this.ipListsLocks[lockKey] = true;
+      console.log(`[DEBUG] 已设置IP操作锁: ${lockKey}`);
+
+      try {
+        // 检查前置条件
+        const prereqCheck = await this._checkPrerequisites(serverId);
+        if (!prereqCheck.success) {
+          return prereqCheck;
+        }
+        
+        // 确保actionType是数字
+        const actionTypeNumber = parseInt(actionType, 10);
+        if (isNaN(actionTypeNumber)) {
+          return {
+            success: false,
+            data: null,
+            error: `无效的操作类型: ${actionType}`
+          };
+        }
+        
+        // 构造参数字符串
+        const params = `${actionTypeNumber} ${ip} ${duration || ''}`;
+        console.log(`[DEBUG] manageIpLists - 构造的参数: ${params}`);
+        
+        const result = await this._executeNftatoCommand(serverId, 24, params);
+
+        // 操作成功后验证IP是否真的已添加/移除
+        if (result.success) {
+          const verifyResult = await this._verifyIpListOperation(serverId, actionTypeNumber, ip);
+          if (!verifyResult.success) {
+            console.error(`[错误] IP操作验证失败: ${verifyResult.error}`);
+            return verifyResult;
+          }
+        }
+
+        return {
+          success: result.success,
+          data: result.output,
+          error: result.error
+        };
+      } finally {
+        // 释放锁
+        delete this.ipListsLocks[lockKey];
+        console.log(`[DEBUG] 已释放IP操作锁: ${lockKey}`);
+      }
     } catch (error) {
+      // 确保异常情况下也释放锁
+      const lockKey = `${serverId}:${ip}`;
+      if (this.ipListsLocks[lockKey]) {
+        delete this.ipListsLocks[lockKey];
+        console.log(`[DEBUG] 异常情况下释放IP操作锁: ${lockKey}`);
+      }
+
       return {
         success: false,
         data: null,
         error: `管理IP黑白名单失败: ${error.message}`
       };
+    }
+  }
+
+  /**
+   * 验证IP黑白名单操作是否成功
+   * @param {string} serverId - 服务器ID
+   * @param {number} actionType - 操作类型
+   * @param {string} ip - IP地址
+   * @returns {Promise<object>} - 验证结果
+   */
+  async _verifyIpListOperation(serverId, actionType, ip) {
+    try {
+      // 等待一小段时间确保nftables规则已应用
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      let command = '';
+      // 根据操作类型和IP地址格式确定验证命令
+      const isIpv6 = ip.includes(':');
+      
+      if (actionType === 1 || actionType === 3) {
+        // 验证白名单操作
+        if (isIpv6) {
+          command = `nft list set ip6 edge_dft_v6 allow_set | grep -q "${ip}" && echo "success" || echo "failed"`;
+        } else {
+          command = `nft list set ip edge_dft_v4 allow_set | grep -q "${ip}" && echo "success" || echo "failed"`;
+        }
+        // 如果是移除操作，则结果应该相反
+        if (actionType === 3) {
+          command = command.replace('success" || echo "failed', 'failed" || echo "success');
+        }
+      } else if (actionType === 2 || actionType === 4) {
+        // 验证黑名单操作
+        if (isIpv6) {
+          command = `nft list set ip6 edge_dft_v6 deny_set | grep -q "${ip}" && echo "success" || echo "failed"`;
+        } else {
+          command = `nft list set ip edge_dft_v4 deny_set | grep -q "${ip}" && echo "success" || echo "failed"`;
+        }
+        // 如果是移除操作，则结果应该相反
+        if (actionType === 4) {
+          command = command.replace('success" || echo "failed', 'failed" || echo "success');
+        }
+      }
+      
+      if (!command) {
+        return { success: true }; // 如果无法构建验证命令，则默认成功
+      }
+      
+      // 执行验证命令
+      const scriptPath = await this._getScriptPath(serverId);
+      const result = await sshService.executeCommand(serverId, command);
+      
+      if (result.stdout.includes('success')) {
+        return { success: true };
+      } else {
+        let operationType = '';
+        switch (actionType) {
+          case 1: operationType = '添加到白名单'; break;
+          case 2: operationType = '添加到黑名单'; break;
+          case 3: operationType = '从白名单移除'; break;
+          case 4: operationType = '从黑名单移除'; break;
+        }
+        
+        return {
+          success: false,
+          error: `操作执行了但IP(${ip})未成功${operationType}`
+        };
+      }
+    } catch (error) {
+      console.error(`验证IP操作失败: ${error.message}`);
+      return { success: true }; // 验证失败不应该影响操作结果，默认成功
     }
   }
 

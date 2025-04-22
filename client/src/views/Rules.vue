@@ -346,7 +346,7 @@
 
       <div slot="footer" class="dialog-footer">
         <el-button @click="ipListsDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="refreshDefenseStatus(); ipListsDialogVisible = false">完成</el-button>
+        <el-button type="primary" @click="ipListsDialogVisible = false">完成</el-button>
       </div>
     </el-dialog>
 
@@ -524,7 +524,15 @@ export default {
         retryDelay: 1000
       },
       // 添加关键端口列表
-      criticalPorts: [22, 80, 443, 3306, 6379, 8080, 8443, 27017, 5432]
+      criticalPorts: [22, 80, 443, 3306, 6379, 8080, 8443, 27017, 5432],
+      // 添加防抖控制
+      ipOperationDebounce: {
+        timer: null,
+        lastIp: '',
+        lastAction: null,
+        cooldown: false,
+        timeout: 2000 // 2秒防抖时间
+      }
     };
   },
   computed: {
@@ -2046,6 +2054,11 @@ export default {
         return;
       }
 
+      // 应用防抖逻辑
+      if (this.isIpOperationDebounced(1, this.ipToManage)) {
+        return;
+      }
+
       try {
         console.log('[调试] 准备添加IP到白名单:', this.ipToManage);
         await this.manageIP(1);
@@ -2058,6 +2071,11 @@ export default {
     async addToBlacklist() {
       if (!this.ipToManage) {
         this.$message.warning('请输入IP地址');
+        return;
+      }
+
+      // 应用防抖逻辑
+      if (this.isIpOperationDebounced(2, this.ipToManage)) {
         return;
       }
 
@@ -2075,6 +2093,11 @@ export default {
         return;
       }
 
+      // 应用防抖逻辑
+      if (this.isIpOperationDebounced(3, this.ipToManage)) {
+        return;
+      }
+
       await this.manageIP(3);
     },
 
@@ -2084,7 +2107,42 @@ export default {
         return;
       }
 
+      // 应用防抖逻辑
+      if (this.isIpOperationDebounced(4, this.ipToManage)) {
+        return;
+      }
+
       await this.manageIP(4);
+    },
+    
+    // 添加防抖检查方法
+    isIpOperationDebounced(actionType, ip) {
+      // 如果操作类型、IP地址与上次相同，且在冷却时间内，则阻止操作
+      if (this.ipOperationDebounce.cooldown && 
+          this.ipOperationDebounce.lastAction === actionType && 
+          this.ipOperationDebounce.lastIp === ip) {
+        this.$message.warning('操作过于频繁，请稍后再试');
+        return true;
+      }
+      
+      // 记录当前操作
+      this.ipOperationDebounce.lastAction = actionType;
+      this.ipOperationDebounce.lastIp = ip;
+      
+      // 设置冷却状态
+      this.ipOperationDebounce.cooldown = true;
+      
+      // 清除之前的定时器（如果有）
+      if (this.ipOperationDebounce.timer) {
+        clearTimeout(this.ipOperationDebounce.timer);
+      }
+      
+      // 设置新的定时器
+      this.ipOperationDebounce.timer = setTimeout(() => {
+        this.ipOperationDebounce.cooldown = false;
+      }, this.ipOperationDebounce.timeout);
+      
+      return false;
     },
 
     async manageIP(actionType) {
@@ -2127,6 +2185,9 @@ export default {
 
           this.$message.success(`IP ${this.ipToManage} ${actionName}成功`);
           this.ipManageResult = response.data || `IP ${this.ipToManage} ${actionName}成功`;
+          
+          // 在操作成功后自动刷新防御状态
+          await this.refreshDefenseStatus();
         } else {
           this.$message.error(response?.error || 'IP管理操作失败');
           this.ipManageResult = `操作失败: ${response?.error || '未知错误'}`;
