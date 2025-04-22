@@ -101,7 +101,15 @@ const actions = {
     
     try {
       const response = await axios.post(`${API_URL}/${id}/connect`);
-      await dispatch('getAllServers');
+      if (response.data && response.data.serverStatus) {
+        commit('updateServerStatus', {
+          id,
+          status: response.data.serverStatus,
+          lastCheck: new Date().toISOString()
+        });
+      } else {
+        await dispatch('getAllServers');
+      }
       return response.data;
     } catch (error) {
       commit('setError', error.response ? error.response.data.message : error.message);
@@ -117,7 +125,15 @@ const actions = {
     
     try {
       const response = await axios.post(`${API_URL}/${id}/disconnect`);
-      await dispatch('getAllServers');
+      if (response.data && response.data.serverStatus) {
+        commit('updateServerStatus', {
+          id,
+          status: response.data.serverStatus,
+          lastCheck: new Date().toISOString()
+        });
+      } else {
+        await dispatch('getAllServers');
+      }
       return response.data;
     } catch (error) {
       commit('setError', error.response ? error.response.data.message : error.message);
@@ -132,6 +148,14 @@ const actions = {
     
     try {
       const response = await axios.get(`${API_URL}/${id}/status`);
+      if (response.data && response.data.data && response.data.data.status) {
+        commit('updateServerStatus', {
+          id,
+          status: response.data.data.status,
+          lastCheck: new Date().toISOString(),
+          backendConnected: response.data.data.backendConnected || false
+        });
+      }
       return response.data;
     } catch (error) {
       commit('setError', error.response ? error.response.data.message : error.message);
@@ -167,6 +191,18 @@ const actions = {
     } finally {
       commit('setLoading', false);
     }
+  },
+  
+  async getServerLogs({ commit }, id) {
+    commit('setError', null);
+    
+    try {
+      const response = await axios.get(`${API_URL}/${id}/logs`);
+      return response.data;
+    } catch (error) {
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    }
   }
 };
 
@@ -179,6 +215,14 @@ const mutations = {
   },
   setError(state, error) {
     state.error = error;
+  },
+  updateServerStatus(state, { id, status, lastCheck, backendConnected }) {
+    const server = state.servers.find(s => s._id === id);
+    if (server) {
+      server.status = status;
+      server.lastCheck = lastCheck;
+      server.backendConnected = backendConnected;
+    }
   }
 };
 

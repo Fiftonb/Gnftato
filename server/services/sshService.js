@@ -240,6 +240,7 @@ class SSHService {
    * 在服务器上执行命令
    * @param {string} serverId - 服务器ID
    * @param {string} command - 要执行的命令
+   * @param {number} retryCount - 当前重试次数
    * @returns {Promise<object>} - 命令执行结果
    */
   async executeCommand(serverId, command, retryCount = 0) {
@@ -248,141 +249,169 @@ class SSHService {
       return this.executeCommandEmergency(serverId, command);
     }
     
-    try {
-      console.log(`[诊断] 准备执行命令，服务器ID: ${serverId}, 命令: ${command}, 重试次数: ${retryCount}`);
-      console.log(`[诊断] 连接对象状态: ${this.connections[serverId] ? '存在' : '不存在'}`);
-      
-      // 首先检查连接状态
-      if (!this.checkConnection(serverId)) {
-        console.log(`SSH连接无效，尝试重新连接，服务器ID: ${serverId}`);
-        // 如果连接无效，尝试重新连接
-        try {
-          await this.connect(serverId);
-          console.log(`服务器重新连接成功，服务器ID: ${serverId}`);
-        } catch (connError) {
-          console.error(`重新连接失败: ${connError.message}`);
-          throw new Error(`无法重新建立SSH连接: ${connError.message}`);
-        }
+    // 设置最大重试次数和重试延迟
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 2000; // 2秒
+    
+    // 检查连接状态，如果无效则尝试重新连接
+    if (!this.checkConnection(serverId) && retryCount === 0) {
+      console.log(`SSH连接无效，尝试重新连接，服务器ID: ${serverId}`);
+      try {
+        await this.connect(serverId);
+      } catch (connectError) {
+        console.error(`重新连接服务器失败，服务器ID: ${serverId}, 错误: ${connectError.message}`);
+        // 连接失败，但我们仍会尝试执行命令，因为checkConnection可能过于严格
       }
-
-      const conn = this.connections[serverId];      
-      console.log(`准备在服务器 ${serverId} 上执行命令: ${command}`);
-      
-      // 打印连接详细信息
-      console.log(`[诊断] 连接详情: 可读=${conn._sock?.readable}, 可写=${conn._sock?.writable}, 状态=${conn._state || '未知'}`);
+    }
+    
+    const conn = this.connections[serverId];
+    if (!conn && retryCount >= MAX_RETRIES) {
+      throw new Error(`SSH连接不存在，服务器ID: ${serverId}，已达到最大重试次数`);
+    }
+    
+    // 如果连接对象不存在，尝试重新连接并重试命令
+    if (!conn) {
+      console.log(`SSH连接不存在，尝试重新连接，服务器ID: ${serverId}, 重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
+      try {
+        await this.connect(serverId);
+        // 等待一段时间让连接稳定
+        await new Promise(resolve => setTimeout(resolve, 500));
+        // 重试执行命令
+        return this.executeCommand(serverId, command, retryCount + 1);
+      } catch (connectError) {
+        console.error(`重新连接服务器失败，服务器ID: ${serverId}, 错误: ${connectError.message}`);
+        throw new Error(`执行命令失败: 无法连接到服务器 - ${connectError.message}`);
+      }
+    }
+    
+    try {
+      console.log(`准备执行SSH命令，服务器ID: ${serverId}, 命令: ${command}`);
       
       return new Promise((resolve, reject) => {
-        const execTimeout = setTimeout(() => {
+        // 设置执行超时
+        const timeoutId = setTimeout(() => {
+          const timeoutError = new Error(`命令执行超时 (60秒)`);
           console.error(`命令执行超时，服务器ID: ${serverId}, 命令: ${command}`);
-          reject(new Error('命令执行超时，服务器可能响应缓慢'));
-        }, 30000); // 30秒超时
-        
-        try {
-          conn.exec(command, (err, stream) => {
-            if (err) {
-              clearTimeout(execTimeout);
-              console.error(`执行命令出错: ${err.message}, 错误类型: ${err.code || '未知'}`);
-              console.error(`错误堆栈: ${err.stack || '无堆栈信息'}`);
-              
-              // 如果是连接错误，尝试重新连接后重试
-              if (err.message.includes('not connected') || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT') {
-                if (retryCount < 2) { // 最多重试2次
-                  console.log(`连接错误，尝试重试 (${retryCount + 1}/2)`);
-                  delete this.connections[serverId]; // 清除失效连接
-                  this._updateServerStatus(serverId, 'error');
-                  
-                  // 递归重试，增加重试计数
-                  return setTimeout(() => {
-                    this.executeCommand(serverId, command, retryCount + 1)
-                      .then(resolve)
-                      .catch(reject);
-                  }, 2000);
-                }
-              }
-              
-              reject(err);
-              return;
-            }
-
-            let stdout = '';
-            let stderr = '';
+          
+          // 如果还有重试次数，尝试重试
+          if (retryCount < MAX_RETRIES) {
+            console.log(`超时后重试执行命令，重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
+            clearTimeout(timeoutId);
             
-            console.log(`[诊断] 命令通道已建立，等待数据...`);
-
-            stream.on('close', (code) => {
-              clearTimeout(execTimeout);
-              console.log(`命令执行完成，退出码: ${code}`);
-              console.log(`标准输出长度: ${stdout.length}`);
-              if (stderr) {
-                console.error(`标准错误: ${stderr}`);
+            // 延迟一段时间后重试
+            setTimeout(async () => {
+              try {
+                const result = await this.executeCommand(serverId, command, retryCount + 1);
+                resolve(result);
+              } catch (retryError) {
+                reject(retryError);
               }
+            }, RETRY_DELAY);
+          } else {
+            reject(timeoutError);
+          }
+        }, 60000); // 60秒超时
+        
+        conn.exec(command, (err, stream) => {
+          if (err) {
+            clearTimeout(timeoutId);
+            console.error(`执行命令时出错，服务器ID: ${serverId}, 错误: ${err.message}`);
+            
+            // 如果还有重试次数，尝试重试
+            if (retryCount < MAX_RETRIES) {
+              console.log(`错误后重试执行命令，重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
               
+              // 延迟一段时间后重试
+              setTimeout(async () => {
+                try {
+                  const result = await this.executeCommand(serverId, command, retryCount + 1);
+                  resolve(result);
+                } catch (retryError) {
+                  reject(retryError);
+                }
+              }, RETRY_DELAY);
+            } else {
+              reject(err);
+            }
+            return;
+          }
+          
+          let stdout = '';
+          let stderr = '';
+          
+          stream.on('data', (data) => {
+            stdout += data.toString();
+          });
+          
+          stream.stderr.on('data', (data) => {
+            stderr += data.toString();
+          });
+          
+          stream.on('end', () => {
+            clearTimeout(timeoutId);
+          });
+          
+          stream.on('close', (code) => {
+            clearTimeout(timeoutId);
+            
+            if (code !== 0 && retryCount < MAX_RETRIES) {
+              // 如果命令失败且有重试次数，尝试重试
+              console.log(`命令返回非零状态码(${code})，重试执行命令，重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
+              
+              // 延迟一段时间后重试
+              setTimeout(async () => {
+                try {
+                  const result = await this.executeCommand(serverId, command, retryCount + 1);
+                  resolve(result);
+                } catch (retryError) {
+                  reject(retryError);
+                }
+              }, RETRY_DELAY);
+            } else {
+              // 返回结果
               resolve({
                 code,
-                stdout,
-                stderr
+                stdout: stdout.trim(),
+                stderr: stderr.trim()
               });
-            });
-
-            stream.on('data', (data) => {
-              try {
-                const text = data.toString('utf8');
-                stdout += text;
-                console.log(`[诊断] 收到数据片段，长度: ${text.length}`);
-              } catch (e) {
-                console.error(`解析输出数据时发生错误: ${e.message}`);
-                stdout += '[数据解析错误]';
-              }
-            });
-
-            stream.stderr.on('data', (data) => {
-              try {
-                stderr += data.toString('utf8');
-              } catch (e) {
-                console.error(`解析错误输出时发生错误: ${e.message}`);
-                stderr += '[错误数据解析错误]';
-              }
-            });
-            
-            // 添加错误处理
-            stream.on('error', (err) => {
-              clearTimeout(execTimeout);
-              console.error(`Stream错误: ${err.message}, 类型: ${err.code || '未知'}`);
-              console.error(`Stream错误堆栈: ${err.stack || '无堆栈信息'}`);
-              reject(err);
-            });
+            }
           });
-        } catch (execError) {
-          clearTimeout(execTimeout);
-          console.error(`执行conn.exec时发生异常: ${execError.message}`);
-          console.error(`异常堆栈: ${execError.stack || '无堆栈信息'}`);
-          reject(execError);
-        }
+          
+          // 处理可能的错误
+          stream.on('error', (streamErr) => {
+            clearTimeout(timeoutId);
+            console.error(`命令流出错，服务器ID: ${serverId}, 错误: ${streamErr.message}`);
+            
+            // 如果还有重试次数，尝试重试
+            if (retryCount < MAX_RETRIES) {
+              console.log(`流错误后重试执行命令，重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
+              
+              // 延迟一段时间后重试
+              setTimeout(async () => {
+                try {
+                  const result = await this.executeCommand(serverId, command, retryCount + 1);
+                  resolve(result);
+                } catch (retryError) {
+                  reject(retryError);
+                }
+              }, RETRY_DELAY);
+            } else {
+              reject(streamErr);
+            }
+          });
+        });
       });
     } catch (error) {
-      console.error(`执行命令过程中发生异常: ${error.message}`);
-      console.error(`异常堆栈: ${error.stack || '无堆栈信息'}`);
+      console.error(`执行命令过程中发生异常，服务器ID: ${serverId}, 错误: ${error.message}`);
+      console.error(error.stack);
       
-      // 如果是已知的连接错误，尝试重试
-      if ((error.message.includes('连接') || error.message.includes('SSH') || 
-           error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') && 
-          retryCount < 2) {
-        console.log(`连接异常，尝试重试 (${retryCount + 1}/2)`);
-        // 先清除连接
-        delete this.connections[serverId];
-        this._updateServerStatus(serverId, 'error');
+      // 如果还有重试次数，尝试重试
+      if (retryCount < MAX_RETRIES) {
+        console.log(`异常后重试执行命令，重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
         
-        // 等待后重试
-        return new Promise((resolve, reject) => {
-          setTimeout(async () => {
-            try {
-              const result = await this.executeCommand(serverId, command, retryCount + 1);
-              resolve(result);
-            } catch (retryError) {
-              reject(retryError);
-            }
-          }, 2000);
-        });
+        // 延迟一段时间后重试
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+        return this.executeCommand(serverId, command, retryCount + 1);
       }
       
       throw error;
@@ -552,7 +581,7 @@ class SSHService {
   }
 
   /**
-   * 上传并执行iPtato.sh脚本
+   * 上传并执行Nftato.sh脚本
    * @param {string} serverId - 服务器ID
    * @returns {Promise<object>} - 执行结果
    */

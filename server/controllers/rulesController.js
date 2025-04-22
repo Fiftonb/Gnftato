@@ -458,6 +458,7 @@ exports.allowInboundPorts = async (req, res) => {
  */
 exports.disallowInboundPorts = async (req, res) => {
   try {
+    const serverId = req.params.serverId;
     const { ports } = req.body;
     
     if (!ports) {
@@ -467,7 +468,39 @@ exports.disallowInboundPorts = async (req, res) => {
       });
     }
     
-    const result = await nftablesService.disallowInboundPorts(req.params.serverId, ports);
+    // 验证端口格式
+    const portPattern = /^(\d+(-\d+)?)(,\d+(-\d+)?)*$/;
+    if (!portPattern.test(ports)) {
+      return res.status(400).json({
+        success: false,
+        message: '端口格式无效，请使用逗号分隔的端口或端口范围，如：80,443,8080-8090'
+      });
+    }
+    
+    const result = await nftablesService.disallowInboundPorts(serverId, ports);
+    
+    // 如果请求成功且涉及缓存，更新缓存
+    if (result.success) {
+      try {
+        // 获取并更新入网端口缓存
+        const portsResult = await nftablesService.getInboundPorts(serverId);
+        if (portsResult.success) {
+          await cacheService.updateServerCacheItem(serverId, 'inboundPorts', portsResult.data);
+        }
+      } catch (cacheError) {
+        console.error(`更新缓存失败: ${cacheError.message}`);
+        // 更新缓存失败不影响主操作的成功
+      }
+    }
+    
+    if (result.error && result.error.includes('SSH')) {
+      // SSH端口保护错误，返回更具体的错误信息
+      return res.status(403).json({
+        success: false,
+        message: '无法取消SSH端口的放行',
+        error: result.error
+      });
+    }
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,

@@ -551,7 +551,61 @@ class NftablesService {
    */
   async disallowInboundPorts(serverId, ports) {
     try {
-      const result = await this._executeNftatoCommand(serverId, 16, ports);
+      // 检查前置条件
+      const prereqCheck = await this._checkPrerequisites(serverId);
+      if (!prereqCheck.success) {
+        return prereqCheck;
+      }
+      
+      // 检查是否是SSH端口
+      try {
+        // 获取服务器信息，包括SSH端口
+        const serverModel = require('../models/Server');
+        const server = await serverModel.findById(serverId);
+        
+        if (!server) {
+          return {
+            success: false,
+            error: '服务器不存在'
+          };
+        }
+        
+        // 获取当前SSH端口
+        let sshPort = server.port || 22;
+        
+        // 检查端口列表中是否包含SSH端口
+        const portList = ports.split(',').map(p => {
+          // 处理可能的端口范围，如 8080-8090
+          if (p.includes('-')) {
+            const [start, end] = p.split('-').map(Number);
+            return Array.from({length: end - start + 1}, (_, i) => start + i);
+          }
+          return parseInt(p.trim(), 10);
+        }).flat();
+        
+        // 如果要禁用的端口包含SSH端口，拒绝操作
+        if (portList.includes(sshPort)) {
+          return {
+            success: false,
+            error: `不能取消SSH端口(${sshPort})的放行，这将导致无法连接服务器`
+          };
+        }
+        
+        // 检查端口范围是否包含SSH端口
+        for (const port of portList) {
+          if (port === sshPort) {
+            return {
+              success: false,
+              error: `不能取消SSH端口(${sshPort})的放行，这将导致无法连接服务器`
+            };
+          }
+        }
+      } catch (checkError) {
+        console.error(`检查SSH端口出错: ${checkError.message}`);
+        // 出错时继续执行，但记录日志
+      }
+      
+      const result = await sshService.executeNftato(serverId, 62, ports);
       
       return {
         success: result.success,

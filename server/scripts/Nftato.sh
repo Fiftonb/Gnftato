@@ -54,18 +54,26 @@ XLLiveUD"
 check_system() {
     if [[ -f /etc/redhat-release ]]; then
         release="centos"
+        # CentOS特有的配置路径
+        if [ -f /etc/redhat-release ]; then
+            nft_centos_conf="/etc/sysconfig/nftables.conf"
+        fi
     elif cat /etc/issue | grep -q -E -i "debian"; then
         release="debian"
     elif cat /etc/issue | grep -q -E -i "ubuntu"; then
         release="ubuntu"
     elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
         release="centos"
+        # CentOS特有的配置路径
+        nft_centos_conf="/etc/sysconfig/nftables.conf"
     elif cat /proc/version | grep -q -E -i "debian"; then
         release="debian"
     elif cat /proc/version | grep -q -E -i "ubuntu"; then
         release="ubuntu"
     elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
         release="centos"
+        # CentOS特有的配置路径
+        nft_centos_conf="/etc/sysconfig/nftables.conf"
     fi
     bit=$(uname -m)
 }
@@ -235,12 +243,42 @@ install_nftables() {
             apt-get update
             apt-get install -y nftables
         elif [ "$release" == "centos" ]; then
-            yum install -y nftables
+            # CentOS 9使用dnf命令
+            if grep -q -E "9\." /etc/redhat-release; then
+                dnf install -y nftables
+            else
+                yum install -y nftables
+            fi
+            
+            # 确保CentOS目录结构存在
+            mkdir -p /etc/nftables
+            mkdir -p /etc/sysconfig
+            
+            # 关闭firewalld服务（如果存在）
+            if systemctl is-active firewalld &>/dev/null; then
+                systemctl stop firewalld
+                systemctl disable firewalld
+                echo "已禁用firewalld服务，使用nftables替代"
+            fi
         fi
     fi
     
     # 确保nftables服务启用
-    systemctl enable nftables
+    if [ "$release" == "centos" ]; then
+        # CentOS 9可能需要特殊处理
+        if grep -q -E "9\." /etc/redhat-release 2>/dev/null; then
+            # 查看服务是否存在
+            if systemctl list-unit-files | grep -q nftables.service; then
+                systemctl enable nftables
+            else
+                echo "警告: 未找到nftables服务，请手动检查"
+            fi
+        else
+            systemctl enable nftables
+        fi
+    else
+        systemctl enable nftables
+    fi
     
     echo "nftables安装完成"
 }
@@ -447,21 +485,47 @@ save_nftables_rules() {
     # 保存到配置文件
     nft list ruleset > $nft_ruleset
     
-    # 创建nftables配置文件
-    cat > $nft_conf <<EOF
+    # 为CentOS特别处理
+    if [ "$release" == "centos" ]; then
+        # 确保/etc/sysconfig目录存在
+        mkdir -p /etc/sysconfig
+        
+        # 创建CentOS特定的nftables配置文件
+        cat > /etc/sysconfig/nftables.conf <<EOF
+# 加载主规则文件
+include "$nft_ruleset"
+EOF
+        chmod 600 /etc/sysconfig/nftables.conf
+        # 还原SELinux上下文（如果存在）
+        if command -v restorecon &>/dev/null; then
+            restorecon -v /etc/sysconfig/nftables.conf || true
+        fi
+    else
+        # 其他发行版的处理
+        # 创建nftables配置文件
+        cat > $nft_conf <<EOF
 #!/usr/sbin/nft -f
 
 flush ruleset
 
 include "$nft_ruleset"
 EOF
+    fi
     
     # 确保权限正确
-    chmod 644 $nft_conf
     chmod 644 $nft_ruleset
     
     # 启用nftables服务
-    systemctl restart nftables
+    if [ "$release" == "centos" ]; then
+        # CentOS特定服务重启方式
+        if systemctl is-active nftables &>/dev/null; then
+            systemctl restart nftables
+        else
+            systemctl start nftables
+        fi
+    else
+        systemctl restart nftables
+    fi
     systemctl enable nftables
     
     echo "nftables规则保存完成"
@@ -1383,6 +1447,545 @@ check_network_env() {
     fi
 }
 
+# DDoS防御功能相关函数
+# 设置HTTP/HTTPS DDoS防御
+setup_ddos_protection() {
+    echo "正在配置DDoS防御规则..."
+    
+    # 检查是否已配置防御规则
+    if nft list tables | grep -q "edge_dft_v4"; then
+        echo -e "${Yellow_font_prefix}[警告]${Font_color_suffix} 检测到已存在DDoS防御规则，将先清除旧规则"
+        nft delete table ip edge_dft_v4 2>/dev/null
+        nft delete table ip6 edge_dft_v6 2>/dev/null
+    fi
+    
+    # 创建IPv4防御表和集合
+    nft add table ip edge_dft_v4
+    nft add set ip edge_dft_v4 allow_set { type ipv4_addr\; flags timeout\; }
+    nft add set ip edge_dft_v4 deny_set { type ipv4_addr\; size 65535\; flags timeout\; }
+    
+    # 创建基础输入链
+    nft add chain ip edge_dft_v4 input { type filter hook input priority 0\; policy accept\; }
+    
+    # 添加基本规则
+    nft add rule ip edge_dft_v4 input iifname "lo" accept
+    nft add rule ip edge_dft_v4 input ip saddr @allow_set accept
+    nft add rule ip edge_dft_v4 input ip saddr @deny_set drop
+    
+    # 添加SSH防暴力破解规则
+    get_ssh_port
+    nft add rule ip edge_dft_v4 input tcp dport $PORT ct state new limit rate 15/minute log prefix \"New SSH connection: \" counter accept comment \"Avoid brute force on SSH\"
+    
+    # 添加HTTP防御规则
+    nft add rule ip edge_dft_v4 input tcp dport http ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnections_100000ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport http meter meter-ip-80-max-connections size 65535 { ip saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnectionsPerIP_600ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
+    
+    # 添加HTTPS防御规则
+    nft add rule ip edge_dft_v4 input tcp dport https ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnections_100000ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport https meter meter-ip-443-max-connections size 65535 { ip saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnectionsPerIP_600ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
+    
+    # 配置IPv6防御规则
+    setup_ipv6_ddos_protection
+    
+    save_nftables_rules
+    echo -e "${Green_font_prefix}[成功]${Font_color_suffix} DDoS防御规则已配置完成!"
+}
+
+# 设置IPv6 DDoS防御
+setup_ipv6_ddos_protection() {
+    # 创建IPv6防御表和集合
+    nft add table ip6 edge_dft_v6
+    nft add set ip6 edge_dft_v6 allow_set { type ipv6_addr\; flags timeout\; }
+    nft add set ip6 edge_dft_v6 deny_set { type ipv6_addr\; size 65535\; flags timeout\; }
+    
+    # 创建基础输入链
+    nft add chain ip6 edge_dft_v6 input { type filter hook input priority 0\; policy accept\; }
+    
+    # 添加基本规则
+    nft add rule ip6 edge_dft_v6 input iifname "lo" accept
+    nft add rule ip6 edge_dft_v6 input ip6 saddr @allow_set accept
+    nft add rule ip6 edge_dft_v6 input ip6 saddr @deny_set drop
+    
+    # 添加SSH防暴力破解规则
+    get_ssh_port
+    nft add rule ip6 edge_dft_v6 input tcp dport $PORT ct state new limit rate 15/minute log prefix \"New SSH connection: \" counter packets 0 bytes 0 accept comment \"Avoid brute force on SSH\"
+    
+    # 添加HTTP防御规则
+    nft add rule ip6 edge_dft_v6 input tcp dport http ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnections_100000ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport http meter meter-ip6-80-max-connections size 65535 { ip6 saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnectionsPerIP_600ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
+    
+    # 添加HTTPS防御规则
+    nft add rule ip6 edge_dft_v6 input tcp dport https ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnections_100000ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport https meter meter-ip6-443-max-connections size 65535 { ip6 saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnectionsPerIP_600ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
+}
+
+# 自定义端口DDoS防御
+setup_custom_port_protection() {
+    echo -e "请输入需要防御的端口"
+    read -e -p "(例如: 8080):" PORT
+    [[ -z "${PORT}" ]] && echo "已取消..." && exit 0
+    
+    echo -e "请输入端口协议"
+    echo -e "1. TCP"
+    echo -e "2. UDP"
+    echo -e "3. TCP+UDP"
+    read -e -p "(默认: 1. TCP):" PROTO_TYPE
+    [[ -z "${PROTO_TYPE}" ]] && PROTO_TYPE="1"
+    
+    echo -e "请输入每IP最大连接数"
+    read -e -p "(默认: 600):" MAX_CONN
+    [[ -z "${MAX_CONN}" ]] && MAX_CONN=600
+    
+    echo -e "请输入每IP每分钟最大新连接数"
+    read -e -p "(默认: 500):" MAX_RATE_MIN
+    [[ -z "${MAX_RATE_MIN}" ]] && MAX_RATE_MIN=500
+    
+    echo -e "请输入每IP每秒最大新连接数"
+    read -e -p "(默认: 300):" MAX_RATE_SEC
+    [[ -z "${MAX_RATE_SEC}" ]] && MAX_RATE_SEC=300
+    
+    echo -e "请输入违规IP封禁时长(小时)"
+    read -e -p "(默认: 24小时):" BAN_HOURS
+    [[ -z "${BAN_HOURS}" ]] && BAN_HOURS=24
+    
+    # 检查IPv4表是否存在
+    if ! nft list tables | grep -q "edge_dft_v4"; then
+        echo -e "${Yellow_font_prefix}[警告]${Font_color_suffix} 未检测到DDoS防御表，将先创建基础防御规则"
+        setup_ddos_protection
+    fi
+    
+    # 计算超时时间
+    BAN_TIMEOUT="${BAN_HOURS}h"
+    if [ "$BAN_HOURS" -eq "24" ]; then
+        BAN_TIMEOUT="23h30m"  # 稍微短一点以避免边界情况
+    fi
+    
+    # 添加IPv4规则
+    if [[ "$PROTO_TYPE" == "1" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
+        # TCP规则
+        nft add rule ip edge_dft_v4 input tcp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnections_100000ZZ\"
+        nft add rule ip edge_dft_v4 input tcp dport $PORT meter meter-ip-${PORT}-max-connections size 65535 { ip saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
+        nft add rule ip edge_dft_v4 input tcp dport $PORT ct state new meter meter-ip-${PORT}-new-connections-rate size 65535 { ip saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
+        nft add rule ip edge_dft_v4 input tcp dport $PORT ct state new meter meter-ip-${PORT}-new-connections-secondly-rate size 65535 { ip saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+    fi
+    
+    if [[ "$PROTO_TYPE" == "2" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
+        # UDP规则
+        nft add rule ip edge_dft_v4 input udp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnections_100000ZZ\"
+        nft add rule ip edge_dft_v4 input udp dport $PORT meter meter-ip-${PORT}-udp-max-connections size 65535 { ip saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
+        nft add rule ip edge_dft_v4 input udp dport $PORT ct state new meter meter-ip-${PORT}-udp-new-connections-rate size 65535 { ip saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
+        nft add rule ip edge_dft_v4 input udp dport $PORT ct state new meter meter-ip-${PORT}-udp-new-connections-secondly-rate size 65535 { ip saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+    fi
+    
+    # 也为IPv6添加规则
+    if [[ "$PROTO_TYPE" == "1" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
+        # IPv6 TCP规则
+        nft add rule ip6 edge_dft_v6 input tcp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnections_100000ZZ\"
+        nft add rule ip6 edge_dft_v6 input tcp dport $PORT meter meter-ip6-${PORT}-max-connections size 65535 { ip6 saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
+        nft add rule ip6 edge_dft_v6 input tcp dport $PORT ct state new meter meter-ip6-${PORT}-new-connections-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
+        nft add rule ip6 edge_dft_v6 input tcp dport $PORT ct state new meter meter-ip6-${PORT}-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+    fi
+    
+    if [[ "$PROTO_TYPE" == "2" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
+        # IPv6 UDP规则
+        nft add rule ip6 edge_dft_v6 input udp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnections_100000ZZ\"
+        nft add rule ip6 edge_dft_v6 input udp dport $PORT meter meter-ip6-${PORT}-udp-max-connections size 65535 { ip6 saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
+        nft add rule ip6 edge_dft_v6 input udp dport $PORT ct state new meter meter-ip6-${PORT}-udp-new-connections-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
+        nft add rule ip6 edge_dft_v6 input udp dport $PORT ct state new meter meter-ip6-${PORT}-udp-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+    fi
+    
+    save_nftables_rules
+    echo -e "${Green_font_prefix}[成功]${Font_color_suffix} 端口 $PORT 的DDoS防御规则已配置完成!"
+}
+
+# 管理IP黑白名单
+manage_ip_lists() {
+    clear
+    echo -e "==========IP黑白名单管理=========="
+    echo -e "${Green_font_prefix}1.${Font_color_suffix} 添加IP到白名单"
+    echo -e "${Green_font_prefix}2.${Font_color_suffix} 添加IP到黑名单"
+    echo -e "${Green_font_prefix}3.${Font_color_suffix} 从白名单移除IP"
+    echo -e "${Green_font_prefix}4.${Font_color_suffix} 从黑名单移除IP"
+    echo -e "${Green_font_prefix}5.${Font_color_suffix} 查看白名单"
+    echo -e "${Green_font_prefix}6.${Font_color_suffix} 查看黑名单"
+    echo -e "${Green_font_prefix}0.${Font_color_suffix} 返回主菜单"
+    echo -e "=================================="
+    
+    read -e -p "请输入数字 [0-6]:" manage_choice
+    case "$manage_choice" in
+        1) add_to_whitelist ;;
+        2) add_to_blacklist ;;
+        3) remove_from_whitelist ;;
+        4) remove_from_blacklist ;;
+        5) view_whitelist ;;
+        6) view_blacklist ;;
+        0) return ;;
+        *) echo "请输入正确数字 [0-6]" ;;
+    esac
+}
+
+# 添加IP到白名单
+add_to_whitelist() {
+    # 检查是否已设置防御规则
+    if ! nft list tables | grep -q "edge_dft_v4"; then
+        echo -e "${Error} 未检测到DDoS防御表，请先配置DDoS防御规则!" 
+        return
+    fi
+    
+    echo -e "请输入要添加到白名单的IP地址"
+    read -e -p "(例如: 1.2.3.4):" IP
+    [[ -z "${IP}" ]] && echo "已取消..." && return
+    
+    # 设置超时时间（天）
+    echo -e "请输入白名单有效期(天，0表示永久)"
+    read -e -p "(默认: 0):" DAYS
+    [[ -z "${DAYS}" ]] && DAYS=0
+    
+    # 判断IPv4或IPv6
+    if [[ "$IP" == *":"* ]]; then
+        # IPv6地址
+        if [ "$DAYS" -eq 0 ]; then
+            nft add element ip6 edge_dft_v6 allow_set { $IP }
+        else
+            nft add element ip6 edge_dft_v6 allow_set { $IP timeout "${DAYS}d" }
+        fi
+    else
+        # IPv4地址
+        if [ "$DAYS" -eq 0 ]; then
+            nft add element ip edge_dft_v4 allow_set { $IP }
+        else
+            nft add element ip edge_dft_v4 allow_set { $IP timeout "${DAYS}d" }
+        fi
+    fi
+    
+    echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已添加到白名单!"
+    manage_ip_lists
+}
+
+# 添加IP到黑名单
+add_to_blacklist() {
+    # 检查是否已设置防御规则
+    if ! nft list tables | grep -q "edge_dft_v4"; then
+        echo -e "${Error} 未检测到DDoS防御表，请先配置DDoS防御规则!" 
+        return
+    fi
+    
+    echo -e "请输入要添加到黑名单的IP地址"
+    read -e -p "(例如: 1.2.3.4):" IP
+    [[ -z "${IP}" ]] && echo "已取消..." && return
+    
+    # 设置超时时间（小时）
+    echo -e "请输入黑名单有效期(小时，0表示永久)"
+    read -e -p "(默认: 24):" HOURS
+    [[ -z "${HOURS}" ]] && HOURS=24
+    
+    # 判断IPv4或IPv6
+    if [[ "$IP" == *":"* ]]; then
+        # IPv6地址
+        if [ "$HOURS" -eq 0 ]; then
+            nft add element ip6 edge_dft_v6 deny_set { $IP }
+        else
+            nft add element ip6 edge_dft_v6 deny_set { $IP timeout "${HOURS}h" }
+        fi
+    else
+        # IPv4地址
+        if [ "$HOURS" -eq 0 ]; then
+            nft add element ip edge_dft_v4 deny_set { $IP }
+        else
+            nft add element ip edge_dft_v4 deny_set { $IP timeout "${HOURS}h" }
+        fi
+    fi
+    
+    echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已添加到黑名单!"
+    manage_ip_lists
+}
+
+# 从白名单移除IP
+remove_from_whitelist() {
+    # 检查是否已设置防御规则
+    if ! nft list tables | grep -q "edge_dft_v4"; then
+        echo -e "${Error} 未检测到DDoS防御表，请先配置DDoS防御规则!" 
+        return
+    fi
+    
+    # 显示当前白名单
+    view_whitelist_simple
+    
+    echo -e "请输入要从白名单移除的IP地址"
+    read -e -p "(例如: 1.2.3.4):" IP
+    [[ -z "${IP}" ]] && echo "已取消..." && return
+    
+    # 判断IPv4或IPv6
+    if [[ "$IP" == *":"* ]]; then
+        # IPv6地址
+        nft delete element ip6 edge_dft_v6 allow_set { $IP }
+    else
+        # IPv4地址
+        nft delete element ip edge_dft_v4 allow_set { $IP }
+    fi
+    
+    echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已从白名单移除!"
+    manage_ip_lists
+}
+
+# 从黑名单移除IP
+remove_from_blacklist() {
+    # 检查是否已设置防御规则
+    if ! nft list tables | grep -q "edge_dft_v4"; then
+        echo -e "${Error} 未检测到DDoS防御表，请先配置DDoS防御规则!" 
+        return
+    fi
+    
+    # 显示当前黑名单
+    view_blacklist_simple
+    
+    echo -e "请输入要从黑名单移除的IP地址"
+    read -e -p "(例如: 1.2.3.4):" IP
+    [[ -z "${IP}" ]] && echo "已取消..." && return
+    
+    # 判断IPv4或IPv6
+    if [[ "$IP" == *":"* ]]; then
+        # IPv6地址
+        nft delete element ip6 edge_dft_v6 deny_set { $IP }
+    else
+        # IPv4地址
+        nft delete element ip edge_dft_v4 deny_set { $IP }
+    fi
+    
+    echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已从黑名单移除!"
+    manage_ip_lists
+}
+
+# 简化版查看白名单
+view_whitelist_simple() {
+    echo -e "============当前白名单============"
+    # 检查IPv4白名单
+    ipv4_whitelist=$(nft list set ip edge_dft_v4 allow_set 2>/dev/null)
+    if [[ -n "$ipv4_whitelist" ]]; then
+        echo -e "IPv4白名单:"
+        echo "$ipv4_whitelist" | grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}'
+    fi
+    
+    # 检查IPv6白名单
+    ipv6_whitelist=$(nft list set ip6 edge_dft_v6 allow_set 2>/dev/null)
+    if [[ -n "$ipv6_whitelist" ]]; then
+        echo -e "IPv6白名单:"
+        echo "$ipv6_whitelist" | grep -o '[0-9a-fA-F:]\+' | grep ':'
+    fi
+    
+    echo -e "=================================="
+}
+
+# 查看白名单
+view_whitelist() {
+    # 检查是否已设置防御规则
+    if ! nft list tables | grep -q "edge_dft_v4"; then
+        echo -e "${Error} 未检测到DDoS防御表，请先配置DDoS防御规则!" 
+        manage_ip_lists
+        return
+    fi
+    
+    echo -e "============当前白名单============"
+    # 检查IPv4白名单
+    ipv4_whitelist=$(nft list set ip edge_dft_v4 allow_set 2>/dev/null)
+    if [[ -n "$ipv4_whitelist" && "$ipv4_whitelist" == *"elements"* ]]; then
+        echo -e "IPv4白名单:"
+        echo "$ipv4_whitelist" | grep -A1000 "elements" | grep -v "^[[:space:]]*$" | grep -v "elements"
+    else
+        echo -e "IPv4白名单为空"
+    fi
+    
+    # 检查IPv6白名单
+    ipv6_whitelist=$(nft list set ip6 edge_dft_v6 allow_set 2>/dev/null)
+    if [[ -n "$ipv6_whitelist" && "$ipv6_whitelist" == *"elements"* ]]; then
+        echo -e "IPv6白名单:"
+        echo "$ipv6_whitelist" | grep -A1000 "elements" | grep -v "^[[:space:]]*$" | grep -v "elements"
+    else
+        echo -e "IPv6白名单为空"
+    fi
+    
+    echo -e "=================================="
+    
+    read -e -p "按任意键返回..." temp
+    manage_ip_lists
+}
+
+# 简化版查看黑名单
+view_blacklist_simple() {
+    echo -e "============当前黑名单============"
+    # 检查IPv4黑名单
+    ipv4_blacklist=$(nft list set ip edge_dft_v4 deny_set 2>/dev/null)
+    if [[ -n "$ipv4_blacklist" ]]; then
+        echo -e "IPv4黑名单(前20条):"
+        echo "$ipv4_blacklist" | grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' | head -n 20
+    fi
+    
+    # 检查IPv6黑名单
+    ipv6_blacklist=$(nft list set ip6 edge_dft_v6 deny_set 2>/dev/null)
+    if [[ -n "$ipv6_blacklist" ]]; then
+        echo -e "IPv6黑名单(前20条):"
+        echo "$ipv6_blacklist" | grep -o '[0-9a-fA-F:]\+' | grep ':' | head -n 20
+    fi
+    
+    echo -e "=================================="
+}
+
+# 查看黑名单
+view_blacklist() {
+    # 检查是否已设置防御规则
+    if ! nft list tables | grep -q "edge_dft_v4"; then
+        echo -e "${Error} 未检测到DDoS防御表，请先配置DDoS防御规则!" 
+        manage_ip_lists
+        return
+    fi
+    
+    echo -e "请输入要显示的黑名单条数"
+    read -e -p "(默认: 50):" COUNT
+    [[ -z "${COUNT}" ]] && COUNT=50
+    
+    echo -e "============当前黑名单============"
+    # 检查IPv4黑名单
+    ipv4_blacklist=$(nft list set ip edge_dft_v4 deny_set 2>/dev/null)
+    if [[ -n "$ipv4_blacklist" && "$ipv4_blacklist" == *"elements"* ]]; then
+        echo -e "IPv4黑名单(前${COUNT}条):"
+        echo "$ipv4_blacklist" | grep -A1000 "elements" | grep -v "^[[:space:]]*$" | grep -v "elements" | head -n $COUNT
+        
+        # 计算总数
+        ipv4_count=$(echo "$ipv4_blacklist" | grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' | wc -l)
+        echo -e "IPv4黑名单总IP数: $ipv4_count"
+    else
+        echo -e "IPv4黑名单为空"
+    fi
+    
+    # 检查IPv6黑名单
+    ipv6_blacklist=$(nft list set ip6 edge_dft_v6 deny_set 2>/dev/null)
+    if [[ -n "$ipv6_blacklist" && "$ipv6_blacklist" == *"elements"* ]]; then
+        echo -e "IPv6黑名单(前${COUNT}条):"
+        echo "$ipv6_blacklist" | grep -A1000 "elements" | grep -v "^[[:space:]]*$" | grep -v "elements" | head -n $COUNT
+        
+        # 计算总数
+        ipv6_count=$(echo "$ipv6_blacklist" | grep -o '[0-9a-fA-F:]\+' | grep ':' | wc -l)
+        echo -e "IPv6黑名单总IP数: $ipv6_count"
+    else
+        echo -e "IPv6黑名单为空"
+    fi
+    
+    echo -e "=================================="
+    
+    read -e -p "按任意键返回..." temp
+    manage_ip_lists
+}
+
+# 查看防御状态
+view_defense_status() {
+    echo -e "============当前防御状态============"
+    
+    # 检查edge_dft_v4表是否存在
+    if nft list tables | grep -q "edge_dft_v4"; then
+        echo -e "${Green_font_prefix}[已启用]${Font_color_suffix} DDoS防御"
+        
+        # 获取计数器信息
+        http_drop=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "drop" | grep "http" | grep -o "packets [0-9]*" | awk '{sum+=$2} END {print sum}')
+        https_drop=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "drop" | grep "https" | grep -o "packets [0-9]*" | awk '{sum+=$2} END {print sum}')
+        
+        # 获取自定义端口计数器信息
+        custom_ports=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "ZZtcp_" | grep -v "ZZtcp_80_" | grep -v "ZZtcp_443_" | grep -o "ZZtcp_[0-9]*_" | sort | uniq | grep -o "[0-9]*")
+        
+        echo -e "已阻止HTTP连接次数: ${http_drop:-0}"
+        echo -e "已阻止HTTPS连接次数: ${https_drop:-0}"
+        
+        # 显示保护的端口列表
+        echo -e "\n${Yellow_font_prefix}=== 当前保护的端口列表 ===${Font_color_suffix}"
+        echo -e "标准端口: 80(HTTP), 443(HTTPS)"
+        
+        if [[ -n "$custom_ports" ]]; then
+            echo -e "自定义端口: $custom_ports"
+        else
+            echo -e "自定义端口: 无"
+        fi
+        
+        # 显示端口详细配置的简化版本
+        echo -e "\n${Yellow_font_prefix}=== 端口保护配置详情 ===${Font_color_suffix}"
+        echo -e "格式说明: [端口号] - [连接限制/分钟] [连接限制/秒] [最大并发连接数] [封禁时长]"
+        
+        # 提取HTTP(80)配置
+        http_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
+        http_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
+        http_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep -o "timeout [0-9]*h[0-9]*m" | head -1 | awk '{print $2}')
+        http_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "ct count" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
+        
+        [[ -z "$http_conn_limit" ]] && http_conn_limit="未设置"
+        
+        echo -e "80(HTTP) - ${http_minute_limit:-未设置}/分钟 ${http_second_limit:-未设置}/秒 ${http_conn_limit} ${http_ban_time:-未设置} (已阻止: ${http_drop:-0})"
+        
+        # 提取HTTPS(443)配置
+        https_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
+        https_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
+        https_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep -o "timeout [0-9]*h[0-9]*m" | head -1 | awk '{print $2}')
+        https_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "ct count" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
+        
+        [[ -z "$https_conn_limit" ]] && https_conn_limit="未设置"
+        
+        echo -e "443(HTTPS) - ${https_minute_limit:-未设置}/分钟 ${https_second_limit:-未设置}/秒 ${https_conn_limit} ${https_ban_time:-未设置} (已阻止: ${https_drop:-0})"
+        
+        # 显示自定义端口配置
+        if [[ -n "$custom_ports" ]]; then
+            for port in $custom_ports; do
+                port_drop=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "drop" | grep "ZZtcp_${port}_" | grep -o "packets [0-9]*" | awk '{sum+=$2} END {print sum}')
+                
+                # 提取端口配置
+                port_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
+                port_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
+                port_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep -o "timeout [0-9]*h[0-9]*m" | head -1 | awk '{print $2}')
+                port_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "ct count" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
+                
+                [[ -z "$port_conn_limit" ]] && port_conn_limit="未设置"
+                
+                # 检查该端口是否还有UDP保护
+                udp_protection=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "udp dport $port" | wc -l)
+                if [[ $udp_protection -gt 0 ]]; then
+                    protocol="TCP+UDP"
+                else
+                    protocol="TCP"
+                fi
+                
+                echo -e "${port}(${protocol}) - ${port_minute_limit:-未设置}/分钟 ${port_second_limit:-未设置}/秒 ${port_conn_limit} ${port_ban_time:-未设置} (已阻止: ${port_drop:-0})"
+            done
+        fi
+        
+        # 统计被阻止的总连接数
+        total_drop=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "drop" | grep -o "packets [0-9]*" | awk '{sum+=$2} END {print sum}')
+        
+        echo -e "\n${Yellow_font_prefix}=== 总体防御情况 ===${Font_color_suffix}"
+        echo -e "总拦截连接数: ${total_drop:-0}"
+        
+        # 显示黑白名单IP数量
+        whitelist_ipv4=$(nft list set ip edge_dft_v4 allow_set 2>/dev/null | grep -c '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}')
+        blacklist_ipv4=$(nft list set ip edge_dft_v4 deny_set 2>/dev/null | grep -c '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}')
+        
+        whitelist_ipv6=$(nft list set ip6 edge_dft_v6 allow_set 2>/dev/null | grep -c ':')
+        blacklist_ipv6=$(nft list set ip6 edge_dft_v6 deny_set 2>/dev/null | grep -c ':')
+        
+        echo -e "当前白名单IPv4数量: ${whitelist_ipv4:-0}"
+        echo -e "当前白名单IPv6数量: ${whitelist_ipv6:-0}"
+        echo -e "当前黑名单IPv4数量: ${blacklist_ipv4:-0}"
+        echo -e "当前黑名单IPv6数量: ${blacklist_ipv6:-0}"
+    else
+        echo -e "${Red_font_prefix}[未启用]${Font_color_suffix} DDoS防御"
+        echo -e "请先配置DDoS防御规则!"
+    fi
+    
+    echo -e "=================================="
+}
+
 # 更新脚本
 Update_Shell() {
     # 检测网络环境
@@ -1431,7 +2034,7 @@ Update_Shell() {
 usage() {
     echo -e "使用方法: $0 [参数] [额外参数]"
     echo -e "参数说明:"
-    echo -e "  0-21: 对应菜单中的功能"
+    echo -e "  0-25: 对应菜单中的功能"
     echo -e "需要额外参数的功能:"
     echo -e "  4: 指定要封禁的端口，例如: $0 4 80,443"
     echo -e "  5: 指定要封禁的关键词，例如: $0 5 youtube.com"
@@ -1441,6 +2044,15 @@ usage() {
     echo -e "  16: 指定要取消放行的端口，例如: $0 16 80,443"
     echo -e "  17: 指定要放行的IP，例如: $0 17 1.2.3.4"
     echo -e "  18: 指定要取消放行的IP，例如: $0 18 1.2.3.4"
+    echo -e "  22: 配置DDoS防御规则，例如: $0 22"
+    echo -e "  23: 自定义端口DDoS防御，例如: $0 23 8080 1 400 400 300 24"
+    echo -e "      参数: <端口> [协议类型] [每IP最大连接数] [每分钟最大连接] [每秒最大连接] [封禁时长]"
+    echo -e "      协议类型: 1=TCP, 2=UDP, 3=TCP+UDP，默认为1(TCP)"
+    echo -e "  24: 管理IP黑白名单，例如: $0 24 <操作类型> <IP地址> [有效期]"
+    echo -e "      操作类型: 1=添加白名单, 2=添加黑名单, 3=从白名单移除, 4=从黑名单移除"
+    echo -e "      例如: $0 24 1 1.2.3.4 7 (添加IP到白名单，有效期7天)"
+    echo -e "            $0 24 2 1.2.3.4 24 (添加IP到黑名单，有效期24小时)"
+    echo -e "  25: 查看当前防御状态，例如: $0 25"
 }
 
 # 非交互式处理端口封禁
@@ -1539,9 +2151,184 @@ non_interactive_inip_disallow() {
     echo -e "${Info} 已取消放行入网IP [ ${IP} ] !\n"
 }
 
+# 非交互式配置DDoS防御规则
+non_interactive_ddos_protection() {
+    setup_ddos_protection
+}
+
+# 非交互式配置自定义端口DDoS防御
+non_interactive_custom_port_protection() {
+    PORT=$1
+    PROTO_TYPE=$2
+    MAX_CONN=$3
+    MAX_RATE_MIN=$4
+    MAX_RATE_SEC=$5
+    BAN_HOURS=$6
+    
+    if [[ -z "${PORT}" ]]; then
+        echo "错误: 未指定端口"
+        echo "用法: $0 23 <端口> [协议类型] [每IP最大连接数] [每分钟最大连接] [每秒最大连接] [封禁时长]"
+        echo "例如: $0 23 8080 1 400 400 300 24"
+        echo "协议类型: 1=TCP, 2=UDP, 3=TCP+UDP，默认为1(TCP)"
+        exit 1
+    fi
+    
+    # 设置默认值
+    [[ -z "${PROTO_TYPE}" ]] && PROTO_TYPE="1"
+    [[ -z "${MAX_CONN}" ]] && MAX_CONN=400
+    [[ -z "${MAX_RATE_MIN}" ]] && MAX_RATE_MIN=400
+    [[ -z "${MAX_RATE_SEC}" ]] && MAX_RATE_SEC=300
+    [[ -z "${BAN_HOURS}" ]] && BAN_HOURS=24
+    
+    # 检查IPv4表是否存在
+    if ! nft list tables | grep -q "edge_dft_v4"; then
+        echo "未检测到DDoS防御表，先创建基础防御规则"
+        setup_ddos_protection
+    fi
+    
+    # 计算超时时间
+    BAN_TIMEOUT="${BAN_HOURS}h"
+    if [ "$BAN_HOURS" -eq "24" ]; then
+        BAN_TIMEOUT="23h30m"  # 稍微短一点以避免边界情况
+    fi
+    
+    # 添加IPv4规则
+    if [[ "$PROTO_TYPE" == "1" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
+        # TCP规则
+        nft add rule ip edge_dft_v4 input tcp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnections_100000ZZ\"
+        nft add rule ip edge_dft_v4 input tcp dport $PORT meter meter-ip-${PORT}-max-connections size 65535 { ip saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
+        nft add rule ip edge_dft_v4 input tcp dport $PORT ct state new meter meter-ip-${PORT}-new-connections-rate size 65535 { ip saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
+        nft add rule ip edge_dft_v4 input tcp dport $PORT ct state new meter meter-ip-${PORT}-new-connections-secondly-rate size 65535 { ip saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+    fi
+    
+    if [[ "$PROTO_TYPE" == "2" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
+        # UDP规则
+        nft add rule ip edge_dft_v4 input udp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnections_100000ZZ\"
+        nft add rule ip edge_dft_v4 input udp dport $PORT meter meter-ip-${PORT}-udp-max-connections size 65535 { ip saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
+        nft add rule ip edge_dft_v4 input udp dport $PORT ct state new meter meter-ip-${PORT}-udp-new-connections-rate size 65535 { ip saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
+        nft add rule ip edge_dft_v4 input udp dport $PORT ct state new meter meter-ip-${PORT}-udp-new-connections-secondly-rate size 65535 { ip saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+    fi
+    
+    # 也为IPv6添加规则
+    if [[ "$PROTO_TYPE" == "1" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
+        # IPv6 TCP规则
+        nft add rule ip6 edge_dft_v6 input tcp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnections_100000ZZ\"
+        nft add rule ip6 edge_dft_v6 input tcp dport $PORT meter meter-ip6-${PORT}-max-connections size 65535 { ip6 saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
+        nft add rule ip6 edge_dft_v6 input tcp dport $PORT ct state new meter meter-ip6-${PORT}-new-connections-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
+        nft add rule ip6 edge_dft_v6 input tcp dport $PORT ct state new meter meter-ip6-${PORT}-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+    fi
+    
+    if [[ "$PROTO_TYPE" == "2" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
+        # IPv6 UDP规则
+        nft add rule ip6 edge_dft_v6 input udp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnections_100000ZZ\"
+        nft add rule ip6 edge_dft_v6 input udp dport $PORT meter meter-ip6-${PORT}-udp-max-connections size 65535 { ip6 saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
+        nft add rule ip6 edge_dft_v6 input udp dport $PORT ct state new meter meter-ip6-${PORT}-udp-new-connections-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
+        nft add rule ip6 edge_dft_v6 input udp dport $PORT ct state new meter meter-ip6-${PORT}-udp-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+    fi
+    
+    save_nftables_rules
+    echo -e "${Green_font_prefix}[成功]${Font_color_suffix} 已为端口 $PORT 配置DDoS防御规则!"
+}
+
+# 非交互式管理IP黑白名单
+non_interactive_ip_list_manage() {
+    ACTION=$1
+    IP=$2
+    DURATION=$3
+    
+    if [[ -z "${ACTION}" ]]; then
+        echo "错误: 未指定操作类型"
+        echo "用法: $0 24 <操作类型> <IP地址> [有效期]"
+        echo "操作类型: 1=添加白名单, 2=添加黑名单, 3=从白名单移除, 4=从黑名单移除"
+        echo "例如: $0 24 1 1.2.3.4 7 (添加IP 1.2.3.4到白名单，有效期7天)"
+        echo "      $0 24 2 1.2.3.4 24 (添加IP 1.2.3.4到黑名单，有效期24小时)"
+        exit 1
+    fi
+    
+    if [[ -z "${IP}" ]]; then
+        echo "错误: 未指定IP地址"
+        exit 1
+    fi
+    
+    # 检查是否已设置防御规则
+    if ! nft list tables | grep -q "edge_dft_v4"; then
+        echo -e "${Error} 未检测到DDoS防御表，请先配置DDoS防御规则!"
+        setup_ddos_protection
+    fi
+    
+    case "$ACTION" in
+        "1") # 添加白名单
+            [[ -z "${DURATION}" ]] && DURATION=0
+            # 判断IPv4或IPv6
+            if [[ "$IP" == *":"* ]]; then
+                # IPv6地址
+                if [ "$DURATION" -eq 0 ]; then
+                    nft add element ip6 edge_dft_v6 allow_set { $IP }
+                else
+                    nft add element ip6 edge_dft_v6 allow_set { $IP timeout "${DURATION}d" }
+                fi
+            else
+                # IPv4地址
+                if [ "$DURATION" -eq 0 ]; then
+                    nft add element ip edge_dft_v4 allow_set { $IP }
+                else
+                    nft add element ip edge_dft_v4 allow_set { $IP timeout "${DURATION}d" }
+                fi
+            fi
+            echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已添加到白名单!"
+            ;;
+        "2") # 添加黑名单
+            [[ -z "${DURATION}" ]] && DURATION=24
+            # 判断IPv4或IPv6
+            if [[ "$IP" == *":"* ]]; then
+                # IPv6地址
+                if [ "$DURATION" -eq 0 ]; then
+                    nft add element ip6 edge_dft_v6 deny_set { $IP }
+                else
+                    nft add element ip6 edge_dft_v6 deny_set { $IP timeout "${DURATION}h" }
+                fi
+            else
+                # IPv4地址
+                if [ "$DURATION" -eq 0 ]; then
+                    nft add element ip edge_dft_v4 deny_set { $IP }
+                else
+                    nft add element ip edge_dft_v4 deny_set { $IP timeout "${DURATION}h" }
+                fi
+            fi
+            echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已添加到黑名单!"
+            ;;
+        "3") # 从白名单移除
+            # 判断IPv4或IPv6
+            if [[ "$IP" == *":"* ]]; then
+                # IPv6地址
+                nft delete element ip6 edge_dft_v6 allow_set { $IP }
+            else
+                # IPv4地址
+                nft delete element ip edge_dft_v4 allow_set { $IP }
+            fi
+            echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已从白名单移除!"
+            ;;
+        "4") # 从黑名单移除
+            # 判断IPv4或IPv6
+            if [[ "$IP" == *":"* ]]; then
+                # IPv6地址
+                nft delete element ip6 edge_dft_v6 deny_set { $IP }
+            else
+                # IPv4地址
+                nft delete element ip edge_dft_v4 deny_set { $IP }
+            fi
+            echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已从黑名单移除!"
+            ;;
+        *)
+            echo "错误: 无效的操作类型"
+            echo "操作类型: 1=添加白名单, 2=添加黑名单, 3=从白名单移除, 4=从黑名单移除"
+            exit 1
+            ;;
+    esac
+}
+
 # 主菜单显示函数
 show_main_menu() {
-    clear
     echo && echo -e " nftables防火墙 管理脚本 ${Red_font_prefix}[v${sh_ver}]${Font_color_suffix}
   -- 参考iPtato.sh脚本实现 --
   -- 使用nftables --
@@ -1574,6 +2361,14 @@ ${Green_font_prefix}15.${Font_color_suffix} 放行 自定义  端口
 ${Green_font_prefix}16.${Font_color_suffix} 删除 已放行  端口
 ${Green_font_prefix}17.${Font_color_suffix} 放行 自定义 IP
 ${Green_font_prefix}18.${Font_color_suffix} 删除 已放行 IP
+
+————————————
+${Red_font_prefix}DDoS防御功能
+
+${Green_font_prefix}22.${Font_color_suffix} 配置 DDoS防御规则
+${Green_font_prefix}23.${Font_color_suffix} 自定义端口 DDoS防御
+${Green_font_prefix}24.${Font_color_suffix} 管理 IP黑白名单
+${Green_font_prefix}25.${Font_color_suffix} 查看 当前防御状态
 
 ————————————
 ${Red_font_prefix}增强功能
@@ -1719,6 +2514,39 @@ if [[ ! -z $action ]]; then
         Update_Shell
         exit 0
         ;;
+        22)
+        setup_ddos_protection
+        exit 0
+        ;;
+        23)
+        if [[ -z $extra_param ]]; then
+            setup_custom_port_protection
+        else
+            port=$extra_param
+            proto_type=$3
+            max_conn=$4
+            max_rate_min=$5
+            max_rate_sec=$6
+            ban_hours=$7
+            non_interactive_custom_port_protection "$port" "$proto_type" "$max_conn" "$max_rate_min" "$max_rate_sec" "$ban_hours"
+        fi
+        exit 0
+        ;;
+        24)
+        if [[ -z $extra_param ]]; then
+            manage_ip_lists
+        else
+            action_type=$extra_param
+            ip=$3
+            duration=$4
+            non_interactive_ip_list_manage "$action_type" "$ip" "$duration"
+        fi
+        exit 0
+        ;;
+        25)
+        view_defense_status
+        exit 0
+        ;;
         "help"|"-h"|"--help")
         usage
         exit 0
@@ -1739,7 +2567,7 @@ if [[ ! -z $action ]]; then
 fi
 
 show_main_menu
-read -e -p " 请输入数字 [0-21]:" num
+read -e -p " 请输入数字 [0-25]:" num
 case "$num" in
     0)
     view_all_disable_out
@@ -1807,7 +2635,19 @@ case "$num" in
     21)
     Update_Shell
     ;;
+    22)
+    setup_ddos_protection
+    ;;
+    23)
+    setup_custom_port_protection
+    ;;
+    24)
+    manage_ip_lists
+    ;;
+    25)
+    view_defense_status
+    ;;
     *)
-    echo "请输入正确数字 [0-21]"
+    echo "请输入正确数字 [0-25]"
     ;;
 esac
