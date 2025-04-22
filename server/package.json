@@ -1,7 +1,7 @@
 {
-  "name": "iptato-panel-server",
+  "name": "Nftato-panel-server",
   "version": "1.0.0",
-  "description": "iPtato防火墙规则多服务器管理面板后端",
+  "description": "Nftato防火墙规则多服务器管理面板后端",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",

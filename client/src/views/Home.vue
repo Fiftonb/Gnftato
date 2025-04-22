@@ -3,7 +3,7 @@
     <div class="dashboard">
       <el-card class="welcome-card">
         <div slot="header">
-          <h2>欢迎使用iPtato防火墙管理面板</h2>
+          <h2>欢迎使用Nftato防火墙管理面板</h2>
         </div>
         <div class="dashboard-content">
           <p>通过这个面板，您可以轻松管理多台服务器的iptables防火墙规则。</p>

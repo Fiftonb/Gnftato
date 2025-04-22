@@ -429,7 +429,7 @@ exports.checkServerStatus = async (req, res) => {
 };
 
 /**
- * 部署iPtato脚本到服务器
+ * 部署Nftato脚本到服务器
  */
 exports.deployIptato = async (req, res) => {
   try {
@@ -472,7 +472,7 @@ exports.deployIptato = async (req, res) => {
     
     res.status(500).json({
       success: false,
-      message: '部署iPtato脚本失败',
+      message: '部署Nftato脚本失败',
       error: error.message,
       errorDetails: process.env.NODE_ENV === 'production' ? undefined : errorDetails
     });

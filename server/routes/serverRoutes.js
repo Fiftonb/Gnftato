@@ -28,7 +28,7 @@ router.post('/:id/execute', serverController.executeCommand);
 router.get('/:id/status', serverController.checkServerStatus);
 router.get('/:id/logs', serverController.getServerLogs);
 
-// iPtato部署路由
+// Nftato部署路由
 router.post('/:id/deploy', serverController.deployIptato);
 
 module.exports = router; 

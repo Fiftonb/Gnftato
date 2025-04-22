@@ -371,8 +371,8 @@
               <li>查看服务器日志文件 (/var/log/syslog 或 /var/log/messages)</li>
               <li>尝试在服务器上手动执行以下命令:</li>
               <pre class="command-example">wget -N --no-check-certificate
-            https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash
-            iPtato.sh</pre>
+            https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh && chmod +x Nftato.sh && bash
+            Nftato.sh</pre>
               <li>如仍无法解决，请联系管理员或提交详细错误报告</li>
             </ol>
           </el-collapse-item>
@@ -1389,7 +1389,7 @@ export default {
 
         const response = await this.$store.dispatch('servers/executeCommand', {
           serverId: this.serverId,
-          command: 'wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash iPtato.sh'
+          command: 'wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh && chmod +x Nftato.sh && bash Nftato.sh'
         });
 
         if (response && response.success) {
@@ -1397,7 +1397,7 @@ export default {
 
           const verifyResponse = await this.$store.dispatch('servers/executeCommand', {
             serverId: this.serverId,
-            command: 'test -f /root/iptato.sh && echo "installed" || echo "not found"'
+            command: 'test -f /root/Nftato.sh && echo "installed" || echo "not found"'
           });
 
           if (verifyResponse && verifyResponse.success &&
@@ -1473,10 +1473,10 @@ export default {
         this.debugInfo = '正在检查脚本存在状态...\n';
 
         const commands = [
-          'ls -la /root/iPtato.sh',
-          'ls -la /root/iptato.sh',
-          'find /root -name "*.sh" | grep -i iptato',
-          'find / -name "*.sh" -type f -not -path "*/\\.*" | grep -i iptato 2>/dev/null'
+          'ls -la /root/Nftato.sh',
+          'ls -la /root/Nftato.sh',
+          'find /root -name "*.sh" | grep -i Nftato',
+          'find / -name "*.sh" -type f -not -path "*/\\.*" | grep -i Nftato 2>/dev/null'
         ];
 
         for (const command of commands) {
@@ -1495,7 +1495,7 @@ export default {
               this.debugInfo += `错误:\n${stderr}\n`;
             }
 
-            if (stdout && (stdout.includes('iPtato.sh') || stdout.includes('iptato.sh'))) {
+            if (stdout && (stdout.includes('Nftato.sh') || stdout.includes('Nftato.sh'))) {
               this.debugInfo += '\n检测到脚本存在！但前端应用未能识别。\n';
               this.debugInfo += '这可能是脚本命名不一致或路径不同导致的问题。\n';
               this.$message.warning('脚本已存在但应用无法识别，请参考调试信息');
@@ -1509,7 +1509,7 @@ export default {
         this.debugInfo += '\n尝试直接执行脚本...\n';
         const execResponse = await this.$store.dispatch('servers/executeCommand', {
           serverId: this.serverId,
-          command: 'cd /root && (./iPtato.sh --help || ./iptato.sh --help || echo "无法执行脚本")'
+          command: 'cd /root && (./Nftato.sh --help || ./Nftato.sh --help || echo "无法执行脚本")'
         });
 
         if (execResponse && execResponse.success) {
@@ -1694,24 +1694,24 @@ export default {
         this.debugging = true;
         this.debugInfo = '以下是您可以直接在服务器上执行的命令：\n\n';
 
-        this.debugInfo += '## 1. 部署iPtato脚本\n';
+        this.debugInfo += '## 1. 部署Nftato脚本\n';
         this.debugInfo += '```\n';
-        this.debugInfo += 'cd ~ && wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh\n';
+        this.debugInfo += 'cd ~ && wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh && chmod +x Nftato.sh\n';
         this.debugInfo += '```\n\n';
 
-        this.debugInfo += '## 2. 测试iPtato脚本\n';
+        this.debugInfo += '## 2. 测试Nftato脚本\n';
         this.debugInfo += '```\n';
-        this.debugInfo += './iPtato.sh\n';
+        this.debugInfo += './Nftato.sh\n';
         this.debugInfo += '```\n\n';
 
         this.debugInfo += '## 3. 常用操作命令\n';
         this.debugInfo += '```\n';
         this.debugInfo += '# 阻止BT/PT流量\n';
-        this.debugInfo += './iPtato.sh 1\n\n';
+        this.debugInfo += './Nftato.sh 1\n\n';
         this.debugInfo += '# 解封BT/PT流量\n';
-        this.debugInfo += './iPtato.sh 11\n\n';
+        this.debugInfo += './Nftato.sh 11\n\n';
         this.debugInfo += '# 查看当前封禁列表\n';
-        this.debugInfo += './iPtato.sh 101\n';
+        this.debugInfo += './Nftato.sh 101\n';
         this.debugInfo += '```\n\n';
 
         this.debugInfo += '## 使用方法\n';

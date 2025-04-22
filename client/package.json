@@ -1,7 +1,7 @@
 {
-  "name": "iptato-panel-client",
+  "name": "Nftato-panel-client",
   "version": "1.0.0",
-  "description": "iPtato防火墙规则多服务器管理面板前端",
+  "description": "Nftato防火墙规则多服务器管理面板前端",
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve",

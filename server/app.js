@@ -112,8 +112,8 @@ if (!fs.existsSync(scriptsDir)) {
 }
 
 // 检查并复制脚本文件
-const sourceScriptPath = path.join(__dirname, '../iPtato.sh');
-const targetScriptPath = path.join(scriptsDir, 'iPtato.sh');
+const sourceScriptPath = path.join(__dirname, '../Nftato.sh');
+const targetScriptPath = path.join(scriptsDir, 'Nftato.sh');
 if (fs.existsSync(sourceScriptPath) && !fs.existsSync(targetScriptPath)) {
   fs.copyFileSync(sourceScriptPath, targetScriptPath);
 }
