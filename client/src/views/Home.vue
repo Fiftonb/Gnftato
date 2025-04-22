@@ -8,11 +8,11 @@
         <div class="dashboard-content">
           <p>通过这个面板，您可以轻松管理多台服务器的nftables防火墙规则。</p>
           <ul>
-            <li>封禁/解封BT、PT协议</li>
             <li>封禁/解封垃圾邮件端口</li>
-            <li>自定义封禁/解封端口和关键词</li>
+            <li>自定义封禁/解封出网端口</li>
             <li>管理入网端口白名单</li>
             <li>管理入网IP白名单</li>
+            <li>管理DDOS防护规则</li>
           </ul>
           <el-button type="primary" @click="$router.push('/servers')">开始管理服务器</el-button>
         </div>
