@@ -803,10 +803,9 @@ class SSHService {
 
       try {
         // 添加AUTOMATED环境变量，让脚本知道它是在自动模式下运行
-        // 修改executeCommandWithStream调用，确保环境变量明确设置
-        // 直接执行初始化命令而不是依赖脚本的自动检测
+        // 同时直接执行命令20(清空并重建防火墙规则)，避免脚本卡在菜单等待用户输入
         const scriptResult = await this.executeCommandWithStream(
-          serverId,
+          serverId, 
           'export AUTOMATED=yes; ./Nftato.sh 20 || echo "Script execution failed"',
           (line, type) => logCallback(line, type)
         );
@@ -835,7 +834,7 @@ class SSHService {
         // 更新服务器缓存
         logCallback('正在更新服务器配置...', 'log');
         const cacheService = require('./cacheService');
-        await cacheService.clearServerCache(serverId);
+        await cacheService.clearServerRulesCache(serverId);
 
         logCallback('部署完成', 'success');
         return { success: true, message: '脚本部署成功' };

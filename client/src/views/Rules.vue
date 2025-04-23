@@ -5006,6 +5006,30 @@ export default {
           setTimeout(() => {
             this.clearServerCacheAfterChange();
             this.refreshAllData();
+            
+            // 部署成功后，延迟1.5秒让用户看到成功消息，然后刷新页面或切换视图
+            setTimeout(() => {
+              this.deployLogs.push({
+                type: 'success',
+                message: '正在加载功能界面...'
+              });
+              
+              // 这里有两种选择:
+              // 1. 重新加载整个页面 - 最简单但体验不是最好
+              // 2. 在当前页面切换到功能视图 - 更好的用户体验
+              
+              // 方案2: 切换到功能视图，更新UI状态
+              this.isInitialized = true;
+              this.deploying = false;
+              this.deployDialogVisible = false;   // 关闭部署对话框
+              this.activeTab = 'inbound';         // 切换到入网控制标签
+              
+              // 通知用户切换成功
+              this.$message.success('部署成功，已加载功能界面');
+              
+              // 强制更新组件
+              this.$forceUpdate();
+            }, 1500);
           }, 1000);
         } else {
           this.deployLogs.push({
