@@ -1263,7 +1263,18 @@ set_in_ports() {
     PORT=${PORT//:/-}
     
     if [[ "$s" == "add" ]]; then
-        # 检查该端口是否已存在的逻辑保持不变...
+        # 检查该端口是否已存在
+        existing_tcp=$(nft -a list chain inet filter input | grep "tcp dport { $PORT }" | grep "shellsettcp")
+        existing_udp=$(nft -a list chain inet filter input | grep "udp dport { $PORT }" | grep "shellsetudp")
+        
+        if [[ -n "$existing_tcp" && -n "$existing_udp" ]]; then
+            echo -e "${Yellow_font_prefix}[警告]${Font_color_suffix} 端口 $PORT 已在放行列表中，跳过添加"
+            return
+        fi
+        
+        # 添加新规则
+        nft add rule inet filter input tcp dport { $PORT } accept comment \"shellsettcp\"
+        nft add rule inet filter input udp dport { $PORT } accept comment \"shellsetudp\"
     elif [[ "$s" == "delete" ]]; then
         # 先列出所有包含该端口的规则
         tcp_rules=$(nft -a list chain inet filter input | grep -E "tcp dport (\\{[^}]*${PORT}[^}]*\\}|${PORT})" | grep "shellsettcp")
