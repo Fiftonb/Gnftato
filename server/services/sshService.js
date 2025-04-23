@@ -42,7 +42,7 @@ class SSHService {
 
       // 创建SSH连接
       const conn = new Client();
-      
+
       // 准备连接配置
       const config = {
         host: server.host,
@@ -80,10 +80,10 @@ class SSHService {
         conn.on('ready', () => {
           // 存储活跃连接
           this.connections[serverId] = conn;
-          
+
           // 更新服务器状态
           this._updateServerStatus(serverId, 'online');
-          
+
           console.log(`SSH连接已就绪，服务器ID: ${serverId}, 主机: ${server.host}`);
           resolve({
             success: true,
@@ -142,12 +142,12 @@ class SSHService {
       console.error(`无SSH连接对象，服务器ID: ${serverId}`);
       return false;
     }
-    
+
     // 检查连接是否正常
     try {
       console.log(`[诊断] 检查连接，服务器ID: ${serverId}`);
       console.log(`[诊断] 连接对象: ${conn ? '存在' : '不存在'}`);
-      
+
       // 增加更完整的连接检查
       if (!conn._sock) {
         console.error(`[诊断] 连接套接字不存在，服务器ID: ${serverId}`);
@@ -155,9 +155,9 @@ class SSHService {
         this._updateServerStatus(serverId, 'error');
         return false;
       }
-      
+
       console.log(`[诊断] 套接字状态: 可读=${conn._sock.readable}, 可写=${conn._sock.writable}`);
-      
+
       if (conn._sock && conn._sock.readable && conn._sock.writable) {
         // 增加连接状态检查
         if (conn._state === 'authenticated') {
@@ -168,13 +168,13 @@ class SSHService {
           // 如果连接不是已认证状态但有状态值，我们尝试假设它有效
           return true;
         }
-        
+
         console.log(`[诊断] 连接套接字正常，但状态未知`);
         return true;
       } else {
         console.error(`SSH连接异常，服务器ID: ${serverId}`);
         console.error(`[诊断] 套接字状态异常: 可读=${conn._sock?.readable}, 可写=${conn._sock?.writable}`);
-        
+
         // 清理异常连接
         delete this.connections[serverId];
         this._updateServerStatus(serverId, 'error');
@@ -204,7 +204,7 @@ class SSHService {
       }
 
       console.log(`[应急模式] 准备在服务器 ${serverId} 上执行命令: ${command}`);
-      
+
       // 由于不能安全地在命令行中使用密码，这里只支持私钥认证
       // 在生产环境中，应该提示用户在服务器上安装sshpass
       if (server.authType === 'password') {
@@ -216,15 +216,15 @@ class SSHService {
         // 创建临时私钥文件
         const tmpKeyPath = path.join(__dirname, `../tmp_key_${serverId}`);
         fs.writeFileSync(tmpKeyPath, server.privateKey, { mode: 0o600 });
-        
+
         const sshCommand = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ${tmpKeyPath} ${server.username}@${server.host} -p ${server.port} "${command.replace(/"/g, '\\"')}"`;
         console.log(`[应急模式] 执行SSH命令: ${sshCommand}`);
       }
-      
+
       // 提供应急响应，但实际不执行SSH命令
       // 这里我们模拟一个成功的响应，但提示用户手动执行命令
       console.log(`[应急模式] 由于环境限制，无法直接执行SSH命令`);
-      
+
       return {
         code: 0,
         stdout: "[应急模式] 命令已准备好，但需要手动执行。请使用生成的手动命令功能。",
@@ -248,11 +248,11 @@ class SSHService {
     if (EMERGENCY_MODE) {
       return this.executeCommandEmergency(serverId, command);
     }
-    
+
     // 设置最大重试次数和重试延迟
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 2000; // 2秒
-    
+
     // 检查连接状态，如果无效则尝试重新连接
     if (!this.checkConnection(serverId) && retryCount === 0) {
       console.log(`SSH连接无效，尝试重新连接，服务器ID: ${serverId}`);
@@ -263,12 +263,12 @@ class SSHService {
         // 连接失败，但我们仍会尝试执行命令，因为checkConnection可能过于严格
       }
     }
-    
+
     const conn = this.connections[serverId];
     if (!conn && retryCount >= MAX_RETRIES) {
       throw new Error(`SSH连接不存在，服务器ID: ${serverId}，已达到最大重试次数`);
     }
-    
+
     // 如果连接对象不存在，尝试重新连接并重试命令
     if (!conn) {
       console.log(`SSH连接不存在，尝试重新连接，服务器ID: ${serverId}, 重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
@@ -283,21 +283,21 @@ class SSHService {
         throw new Error(`执行命令失败: 无法连接到服务器 - ${connectError.message}`);
       }
     }
-    
+
     try {
       console.log(`准备执行SSH命令，服务器ID: ${serverId}, 命令: ${command}`);
-      
+
       return new Promise((resolve, reject) => {
         // 设置执行超时
         const timeoutId = setTimeout(() => {
           const timeoutError = new Error(`命令执行超时 (60秒)`);
           console.error(`命令执行超时，服务器ID: ${serverId}, 命令: ${command}`);
-          
+
           // 如果还有重试次数，尝试重试
           if (retryCount < MAX_RETRIES) {
             console.log(`超时后重试执行命令，重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
             clearTimeout(timeoutId);
-            
+
             // 延迟一段时间后重试
             setTimeout(async () => {
               try {
@@ -311,16 +311,16 @@ class SSHService {
             reject(timeoutError);
           }
         }, 60000); // 60秒超时
-        
+
         conn.exec(command, (err, stream) => {
           if (err) {
             clearTimeout(timeoutId);
             console.error(`执行命令时出错，服务器ID: ${serverId}, 错误: ${err.message}`);
-            
+
             // 如果还有重试次数，尝试重试
             if (retryCount < MAX_RETRIES) {
               console.log(`错误后重试执行命令，重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
-              
+
               // 延迟一段时间后重试
               setTimeout(async () => {
                 try {
@@ -335,29 +335,29 @@ class SSHService {
             }
             return;
           }
-          
+
           let stdout = '';
           let stderr = '';
-          
+
           stream.on('data', (data) => {
             stdout += data.toString();
           });
-          
+
           stream.stderr.on('data', (data) => {
             stderr += data.toString();
           });
-          
+
           stream.on('end', () => {
             clearTimeout(timeoutId);
           });
-          
+
           stream.on('close', (code) => {
             clearTimeout(timeoutId);
-            
+
             if (code !== 0 && retryCount < MAX_RETRIES) {
               // 如果命令失败且有重试次数，尝试重试
               console.log(`命令返回非零状态码(${code})，重试执行命令，重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
-              
+
               // 延迟一段时间后重试
               setTimeout(async () => {
                 try {
@@ -376,16 +376,16 @@ class SSHService {
               });
             }
           });
-          
+
           // 处理可能的错误
           stream.on('error', (streamErr) => {
             clearTimeout(timeoutId);
             console.error(`命令流出错，服务器ID: ${serverId}, 错误: ${streamErr.message}`);
-            
+
             // 如果还有重试次数，尝试重试
             if (retryCount < MAX_RETRIES) {
               console.log(`流错误后重试执行命令，重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
-              
+
               // 延迟一段时间后重试
               setTimeout(async () => {
                 try {
@@ -404,16 +404,16 @@ class SSHService {
     } catch (error) {
       console.error(`执行命令过程中发生异常，服务器ID: ${serverId}, 错误: ${error.message}`);
       console.error(error.stack);
-      
+
       // 如果还有重试次数，尝试重试
       if (retryCount < MAX_RETRIES) {
         console.log(`异常后重试执行命令，重试次数: ${retryCount + 1}/${MAX_RETRIES}`);
-        
+
         // 延迟一段时间后重试
         await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
         return this.executeCommand(serverId, command, retryCount + 1);
       }
-      
+
       throw error;
     }
   }
@@ -428,7 +428,7 @@ class SSHService {
   async uploadFile(serverId, localPath, remotePath) {
     try {
       const conn = this.connections[serverId];
-      
+
       if (!conn) {
         throw new Error('无有效连接，请先连接服务器');
       }
@@ -472,7 +472,7 @@ class SSHService {
   async downloadFile(serverId, remotePath, localPath) {
     try {
       const conn = this.connections[serverId];
-      
+
       if (!conn) {
         throw new Error('无有效连接，请先连接服务器');
       }
@@ -514,7 +514,7 @@ class SSHService {
   async disconnect(serverId) {
     try {
       const conn = this.connections[serverId];
-      
+
       if (!conn) {
         return {
           success: true,
@@ -524,13 +524,13 @@ class SSHService {
 
       // 断开连接
       conn.end();
-      
+
       // 删除连接记录
       delete this.connections[serverId];
-      
+
       // 更新服务器状态
       await this._updateServerStatus(serverId, 'offline');
-      
+
       return {
         success: true,
         message: '连接已断开'
@@ -547,11 +547,11 @@ class SSHService {
   async disconnectAll() {
     try {
       const serverIds = Object.keys(this.connections);
-      
+
       for (const serverId of serverIds) {
         await this.disconnect(serverId);
       }
-      
+
       return {
         success: true,
         message: '所有连接已断开',
@@ -590,7 +590,7 @@ class SSHService {
   async executeCommandWithStream(serverId, command, streamCallback) {
     try {
       console.log(`[流式执行] 准备在服务器 ${serverId} 上执行命令: ${command}`);
-      
+
       // 检查连接状态
       if (!this.checkConnection(serverId)) {
         console.log(`SSH连接无效，尝试重新连接，服务器ID: ${serverId}`);
@@ -604,7 +604,7 @@ class SSHService {
           throw new Error(`无法连接到服务器 - ${connectError.message}`);
         }
       }
-      
+
       const conn = this.connections[serverId];
       if (!conn) {
         const error = new Error('SSH连接不存在');
@@ -613,10 +613,10 @@ class SSHService {
         }
         throw error;
       }
-      
+
       return new Promise((resolve, reject) => {
         console.log(`[流式执行] 开始执行命令: ${command}`);
-        
+
         conn.exec(command, (err, stream) => {
           if (err) {
             console.error(`[流式执行] 创建命令流失败: ${err.message}`);
@@ -626,16 +626,16 @@ class SSHService {
             reject(err);
             return;
           }
-          
+
           let stdout = '';
           let stderr = '';
           let exitCode = -1;
-          
+
           // 处理标准输出流
           stream.on('data', (data) => {
             const text = data.toString();
             stdout += text;
-            
+
             // 按行分割并传递给回调函数
             if (streamCallback) {
               const lines = text.split('\n');
@@ -646,12 +646,12 @@ class SSHService {
               });
             }
           });
-          
+
           // 处理标准错误流
           stream.stderr.on('data', (data) => {
             const text = data.toString();
             stderr += text;
-            
+
             // 按行分割并传递给回调函数
             if (streamCallback) {
               const lines = text.split('\n');
@@ -662,7 +662,7 @@ class SSHService {
               });
             }
           });
-          
+
           // 命令结束处理
           stream.on('close', (code) => {
             exitCode = code;
@@ -674,14 +674,14 @@ class SSHService {
                 streamCallback(`命令执行失败，退出码: ${code}`, 'error');
               }
             }
-            
+
             resolve({
               code: exitCode,
               stdout: stdout,
               stderr: stderr
             });
           });
-          
+
           // 处理流错误
           stream.on('error', (streamErr) => {
             console.error(`[流式执行] 流错误: ${streamErr.message}`);
@@ -707,71 +707,71 @@ class SSHService {
    * @param {function} logCallback 日志回调函数，用于发送实时日志
    * @returns {Promise<object>} 部署结果
    */
-  async deployIptatoWithLogs(serverId, logCallback = () => {}) {
+  async deployIptatoWithLogs(serverId, logCallback = () => { }) {
     try {
       // 发送连接日志
       logCallback('正在连接服务器...', 'log');
-      
+
       // 获取服务器信息 - 使用正确的Server模型
       const server = await Server.findById(serverId);
-      
+
       if (!server) {
         logCallback('找不到服务器信息', 'error');
         return { success: false, error: '找不到服务器信息' };
       }
-      
+
       // 检查服务器状态
       if (server.status !== 'online') {
         logCallback('服务器当前离线，无法部署脚本', 'error');
         return { success: false, error: '服务器当前离线，无法部署脚本' };
       }
-      
+
       // 使用已有的连接方法建立SSH连接
       logCallback('正在建立SSH连接...', 'log');
       const connection = await this.connect(serverId);
-      
+
       if (!connection) {
         logCallback('无法连接到服务器', 'error');
         return { success: false, error: '无法连接到服务器' };
       }
-      
+
       // 连接成功
       logCallback('SSH连接成功', 'success');
-      
+
       // 检查脚本是否已存在
       logCallback('正在检查脚本是否已存在...', 'log');
       const checkScriptResult = await this.executeCommand(serverId, 'test -f /root/Nftato.sh && echo "exists" || echo "not_found"');
-      
+
       if (checkScriptResult.stdout.trim() === 'exists') {
         logCallback('脚本已存在，直接使用现有脚本', 'success');
-        
+
         // 检查脚本是否可执行
         const checkExecResult = await this.executeCommand(serverId, 'test -x /root/Nftato.sh && echo "executable" || echo "not_executable"');
-        
+
         if (checkExecResult.stdout.trim() !== 'executable') {
           logCallback('脚本存在但不可执行，正在设置执行权限...', 'log');
           await this.executeCommand(serverId, 'chmod +x /root/Nftato.sh');
         }
-        
+
         return { success: true, message: '脚本已存在且可执行' };
       }
-      
+
       // 下载脚本
       logCallback('开始下载Nftato脚本...', 'log');
-      
+
       // 修改部署流程 - 分两部分，先下载准备工作，再流式执行脚本
       const prepareCommands = [
         'cd ~',
         'wget -N --no-check-certificate https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh',
         'chmod +x Nftato.sh'
       ];
-      
+
       // 执行准备命令
       for (const cmd of prepareCommands) {
         logCallback(`执行命令: ${cmd}`, 'log');
-        
+
         const result = await this.executeCommand(serverId, cmd);
-        
+
         // 记录命令输出
         if (result.stdout) {
           const lines = result.stdout.split('\n');
@@ -781,7 +781,7 @@ class SSHService {
             }
           });
         }
-        
+
         if (result.stderr) {
           const lines = result.stderr.split('\n');
           lines.forEach(line => {
@@ -790,25 +790,27 @@ class SSHService {
             }
           });
         }
-        
+
         if (result.code !== 0) {
           logCallback(`命令执行失败: ${cmd}`, 'error');
           return { success: false, error: `部署命令失败: ${cmd}` };
         }
       }
-      
+
       // 使用流式方法执行Nftato.sh脚本
       logCallback('开始执行Nftato.sh脚本...', 'log');
       logCallback('这可能需要几分钟时间，请耐心等待...', 'log');
-      
+
       try {
         // 添加AUTOMATED环境变量，让脚本知道它是在自动模式下运行
+        // 修改executeCommandWithStream调用，确保环境变量明确设置
+        // 直接执行初始化命令而不是依赖脚本的自动检测
         const scriptResult = await this.executeCommandWithStream(
-          serverId, 
-          'AUTOMATED=yes ./Nftato.sh || echo "Script execution failed"',
+          serverId,
+          'export AUTOMATED=yes; ./Nftato.sh 20 || echo "Script execution failed"',
           (line, type) => logCallback(line, type)
         );
-        
+
         if (scriptResult.code !== 0) {
           logCallback(`脚本执行失败，退出码: ${scriptResult.code}`, 'error');
           return { success: false, error: `脚本执行失败，退出码: ${scriptResult.code}` };
@@ -817,24 +819,24 @@ class SSHService {
         logCallback(`脚本执行异常: ${scriptError.message}`, 'error');
         return { success: false, error: `脚本执行异常: ${scriptError.message}` };
       }
-      
+
       // 验证部署结果
       logCallback('正在验证脚本安装结果...', 'log');
-      
+
       const verifyResult = await this.executeCommand(serverId, 'test -f ~/Nftato.sh && echo "success" || echo "failed"');
-      
+
       if (verifyResult.stdout.trim() === 'success') {
         logCallback('Nftato脚本已成功部署！', 'success');
-        
+
         // 复制到root目录
         logCallback('正在复制脚本到root目录...', 'log');
         await this.executeCommand(serverId, 'sudo cp ~/Nftato.sh /root/Nftato.sh 2>/dev/null || echo "无法复制到root目录"');
-        
+
         // 更新服务器缓存
         logCallback('正在更新服务器配置...', 'log');
         const cacheService = require('./cacheService');
         await cacheService.clearServerCache(serverId);
-        
+
         logCallback('部署完成', 'success');
         return { success: true, message: '脚本部署成功' };
       } else {
@@ -857,7 +859,7 @@ class SSHService {
   async executeNftato(serverId, action, params = '') {
     try {
       console.log(`[诊断] 准备执行Nftato脚本，服务器ID: ${serverId}, 动作: ${action}${params ? ', 参数: ' + params : ''}`);
-      
+
       // 首先检查连接状态
       if (!this.checkConnection(serverId)) {
         console.error(`尝试执行脚本时，SSH连接无效，服务器ID: ${serverId}`);
@@ -874,7 +876,7 @@ class SSHService {
       try {
         const scriptCheck = await this.executeCommand(serverId, 'test -f /root/Nftato.sh && echo "exists in root" || (test -f ~/Nftato.sh && echo "exists in home" || echo "not found")');
         console.log(`[诊断] 脚本检查结果: ${scriptCheck.stdout.trim()}`);
-        
+
         if (scriptCheck.stdout.includes('not found')) {
           console.error(`脚本未找到，服务器ID: ${serverId}`);
           return {
@@ -896,7 +898,7 @@ class SSHService {
         console.log(`[诊断] 检查脚本执行权限`);
         const permCheck = await this.executeCommand(serverId, `test -x ${scriptPath} && echo "executable" || echo "not executable"`);
         console.log(`[诊断] 权限检查结果: ${permCheck.stdout.trim()}`);
-        
+
         if (permCheck.stdout.includes('not executable')) {
           console.warn(`脚本权限不正确，尝试修复，服务器ID: ${serverId}`);
           // 自动修复执行权限
@@ -909,13 +911,13 @@ class SSHService {
         console.log(`[诊断] 执行脚本命令: ${command}`);
         const result = await this.executeCommand(serverId, command);
         console.log(`[诊断] 脚本执行完成，退出码: ${result.code}`);
-        
+
         // 检查执行结果
         if (result.code !== 0) {
           console.error(`脚本执行失败，退出码: ${result.code}，服务器ID: ${serverId}`);
           console.error(`[诊断] 脚本执行失败，标准输出: ${result.stdout.substring(0, 200)}${result.stdout.length > 200 ? '...' : ''}`);
           console.error(`[诊断] 脚本执行失败，错误输出: ${result.stderr}`);
-          
+
           return {
             success: false,
             output: result.stdout,

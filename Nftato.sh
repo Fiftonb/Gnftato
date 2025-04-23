@@ -2632,8 +2632,14 @@ if [[ ! -z $action ]]; then
     esac
 fi
 
-show_main_menu
-read -e -p " 请输入数字 [0-25]:" num
+if [ $is_automated -eq 1 ]; then
+  # 在自动模式下，跳过菜单直接退出
+  exit 0
+else
+  # 只在非自动模式下显示菜单
+  show_main_menu
+  read -e -p " 请输入数字 [0-25]:" num
+  # ... 现有代码 ...
 case "$num" in
 0)
     view_all_disable_out
@@ -2717,3 +2723,5 @@ case "$num" in
     echo "请输入正确数字 [0-25]"
     ;;
 esac
+
+fi
