@@ -370,7 +370,7 @@ exports.unblockAllKeywords = async (req, res) => {
 };
 
 /**
- * 获取当前放行的入网端口 (修改以支持缓存)
+ * 获取当前放行的入网端口
  */
 exports.getInboundPorts = async (req, res) => {
   try {
@@ -378,7 +378,7 @@ exports.getInboundPorts = async (req, res) => {
     const result = await nftablesService.getInboundPorts(serverId);
     
     if (result.success) {
-      // 如果请求成功，更新缓存
+      // 如果请求成功，确保缓存原始格式的数据
       await cacheService.updateServerCacheItem(serverId, 'inboundPorts', result.data);
     }
     

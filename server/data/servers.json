@@ -9,9 +9,9 @@
       "authType": "password",
       "password": "m?8F_f[ks$CTL4F*",
       "privateKey": "",
-      "status": "online",
+      "status": "offline",
       "createdAt": "2025-04-21T08:23:05.338Z",
-      "updatedAt": "2025-04-23T06:25:52.816Z",
+      "updatedAt": "2025-04-23T07:07:57.975Z",
       "lastConnection": "2025-04-23T06:25:52.816Z"
     },
     {
@@ -25,7 +25,7 @@
       "privateKey": "",
       "status": "offline",
       "createdAt": "2025-04-22T18:02:55.939Z",
-      "updatedAt": "2025-04-23T06:25:49.005Z"
+      "updatedAt": "2025-04-23T07:54:12.358Z"
     }
   ]
 }
