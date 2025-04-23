@@ -1160,37 +1160,41 @@ diable_blocklist_out() {
 # 入网端口控制函数
 # 显示已放行的入网端口
 display_in_port() {
-    # 检索TCP和UDP放行规则
-    tcp_rules=$(nft -a list chain inet filter input | grep "shellsettcp")
-    udp_rules=$(nft -a list chain inet filter input | grep "shellsetudp")
+    # 检索入网端口规则
+    tcp_rules=$(nft -a list chain inet filter input | grep "dport" | grep "tcp" | grep "shellsettcp")
+    udp_rules=$(nft -a list chain inet filter input | grep "dport" | grep "udp" | grep "shellsetudp")
     
-    if [[ -n ${tcp_rules} ]] || [[ -n ${udp_rules} ]]; then
-        echo -e "===============${Red_background_prefix} 当前已放行 端口 ${Font_color_suffix}==============="
-    fi
+    echo -e "===============${Red_background_prefix} 当前已放行 端口 ${Font_color_suffix}==============="
     
     if [[ -n ${tcp_rules} ]]; then
         echo
         echo "TCP端口:"
+        # 提取端口并去重
         echo "${tcp_rules}" | while read -r line; do
             if [[ $line =~ dport[[:space:]]+([0-9,\-]+) ]]; then
-                echo " ${BASH_REMATCH[1]}"
+                port="${BASH_REMATCH[1]}"
+                echo " $port"
             elif [[ $line =~ dport[[:space:]]+\{[[:space:]]*(.*)[[:space:]]*\} ]]; then
-                echo " ${BASH_REMATCH[1]}"
+                port="${BASH_REMATCH[1]}"
+                echo " $port"
             fi
-        done
+        done | sort -u # 排序并去重
         echo && echo -e "==============================================="
     fi
     
     if [[ -n ${udp_rules} ]]; then
         echo
         echo "UDP端口:"
+        # 提取端口并去重
         echo "${udp_rules}" | while read -r line; do
             if [[ $line =~ dport[[:space:]]+([0-9,\-]+) ]]; then
-                echo " ${BASH_REMATCH[1]}"
+                port="${BASH_REMATCH[1]}"
+                echo " $port"
             elif [[ $line =~ dport[[:space:]]+\{[[:space:]]*(.*)[[:space:]]*\} ]]; then
-                echo " ${BASH_REMATCH[1]}"
+                port="${BASH_REMATCH[1]}"
+                echo " $port"
             fi
-        done
+        done | sort -u # 排序并去重
         echo && echo -e "==============================================="
     fi
     
@@ -1259,11 +1263,20 @@ set_in_ports() {
     PORT=${PORT//:/-}
     
     if [[ "$s" == "add" ]]; then
-        nft add rule inet filter input tcp dport { $PORT } accept comment \"shellsettcp\"
-        nft add rule inet filter input udp dport { $PORT } accept comment \"shellsetudp\"
+        # 检查该端口是否已存在的逻辑保持不变...
     elif [[ "$s" == "delete" ]]; then
+        # 先列出所有包含该端口的规则
+        tcp_rules=$(nft -a list chain inet filter input | grep -E "tcp dport (\\{[^}]*${PORT}[^}]*\\}|${PORT})" | grep "shellsettcp")
+        udp_rules=$(nft -a list chain inet filter input | grep -E "udp dport (\\{[^}]*${PORT}[^}]*\\}|${PORT})" | grep "shellsetudp")
+        
+        # 如果没有找到规则，提示用户
+        if [[ -z "$tcp_rules" && -z "$udp_rules" ]]; then
+            echo -e "${Yellow_font_prefix}[警告]${Font_color_suffix} 未找到端口 $PORT 的规则，无需删除"
+            return
+        fi
+        
         # 删除TCP规则
-        nft -a list chain inet filter input | grep "tcp dport { $PORT }" | grep "shellsettcp" | while read -r line; do
+        echo "$tcp_rules" | while read -r line; do
             handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
             if [ -n "$handle" ]; then
                 nft delete rule inet filter input handle $handle
@@ -1271,7 +1284,7 @@ set_in_ports() {
         done
         
         # 删除UDP规则
-        nft -a list chain inet filter input | grep "udp dport { $PORT }" | grep "shellsetudp" | while read -r line; do
+        echo "$udp_rules" | while read -r line; do
             handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
             if [ -n "$handle" ]; then
                 nft delete rule inet filter input handle $handle

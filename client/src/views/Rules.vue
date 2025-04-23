@@ -2238,43 +2238,33 @@ export default {
       if (!this.hasValidServerId) return;
 
       try {
-        // 检查数据类型，确保数据格式正确
-        let safeData = data;
-        if (cacheKey === 'inboundPorts' || cacheKey === 'inboundIPs') {
-          // 确保数据是数组类型
-          safeData = Array.isArray(data) ? data : [];
-        }
-
         // 先从本地缓存中获取最新数据
         const cacheResponse = await this.getServerCache(this.serverId);
         if (cacheResponse && cacheResponse.success) {
           const cache = cacheResponse.data;
-          
-          // 构建更新后的数据结构，确保不会覆盖其他缓存项
-          if (!cache || !cache.data) {
-            console.warn(`服务器缓存数据格式异常，无法更新`);
-            return;
-          }
 
-          // 确保data字段存在
-          if (!cache.data.data) {
-            cache.data.data = {};
+          // 构建更新后的数据结构
+          const updateData = { ...cache.data };
+          
+          // 确保updateData.data存在
+          if (!updateData.data) {
+            updateData.data = {};
           }
+          
+          updateData.data[cacheKey] = data;
 
           // 调用后端API更新缓存项
           const response = await this.$store.dispatch('rules/updateCacheItem', {
             serverId: this.serverId,
             key: cacheKey,
-            value: safeData
+            value: data
           });
 
           if (response && response.success) {
             console.log(`服务器缓存项 ${cacheKey} 已更新`);
           } else {
-            console.warn(`更新服务器缓存项 ${cacheKey} 失败: ${response?.error || '未知错误'}`);
+            console.warn(`更新服务器缓存项 ${cacheKey} 失败`);
           }
-        } else {
-          console.warn('获取服务器缓存失败，无法更新缓存项');
         }
       } catch (error) {
         console.error(`更新服务器缓存项 ${cacheKey} 出错:`, error);
@@ -3511,6 +3501,12 @@ export default {
 
           // 构建更新后的数据结构
           const updateData = { ...cache.data };
+          
+          // 确保updateData.data存在
+          if (!updateData.data) {
+            updateData.data = {};
+          }
+          
           updateData.data[cacheKey] = data;
 
           // 调用后端API更新缓存项

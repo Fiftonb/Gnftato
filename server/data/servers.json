@@ -11,8 +11,8 @@
       "privateKey": "",
       "status": "online",
       "createdAt": "2025-04-21T08:23:05.338Z",
-      "updatedAt": "2025-04-23T06:12:33.842Z",
-      "lastConnection": "2025-04-23T06:12:33.842Z"
+      "updatedAt": "2025-04-23T06:25:52.816Z",
+      "lastConnection": "2025-04-23T06:25:52.816Z"
     },
     {
       "_id": "59e34e3c-adef-4422-aca9-14b4f67e0165",
@@ -25,7 +25,7 @@
       "privateKey": "",
       "status": "offline",
       "createdAt": "2025-04-22T18:02:55.939Z",
-      "updatedAt": "2025-04-23T06:12:03.435Z"
+      "updatedAt": "2025-04-23T06:25:49.005Z"
     }
   ]
 }
