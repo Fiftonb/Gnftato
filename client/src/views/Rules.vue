@@ -511,6 +511,9 @@ export default {
       deployRoomId: null,
       deployComplete: false,
       deploySuccess: false,
+      connectTimeoutTimer: null,
+      heartbeatInterval: null,
+      inactivityTimer: null,
     };
   },
   computed: {
@@ -590,13 +593,14 @@ export default {
     }
   },
   beforeDestroy() {
-    this.stopServerStatusCheck();
-
     // 清理WebSocket连接
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
     }
+    
+    // 清理所有定时器
+    this.clearTimers();
   },
   methods: {
     ...mapActions('servers', [
@@ -4923,8 +4927,9 @@ export default {
       this.socket = io(wsURL, {
         transports: ['websocket', 'polling'],
         reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000
+        reconnectionAttempts: 10,   // 增加重连次数
+        reconnectionDelay: 1000,
+        timeout: 20000              // 增加连接超时时间
       });
 
       // 设置连接事件监听
@@ -4937,7 +4942,32 @@ export default {
 
         // 自动滚动到底部
         this.scrollToBottom();
+        
+        // 清除之前的超时计时器
+        if (this.connectTimeoutTimer) {
+          clearTimeout(this.connectTimeoutTimer);
+          this.connectTimeoutTimer = null;
+        }
       });
+
+      // 设置连接超时
+      this.connectTimeoutTimer = setTimeout(() => {
+        if (!this.socket.connected) {
+          this.deployLogs.push({
+            type: 'error',
+            message: '连接超时，尝试使用常规部署方法...'
+          });
+          this.fallbackToNormalDeploy();
+        }
+      }, 10000);
+
+      // 添加心跳机制，每30秒发送一次心跳，保持连接活跃
+      this.heartbeatInterval = setInterval(() => {
+        if (this.socket && this.socket.connected) {
+          console.log('发送心跳信号...');
+          this.socket.emit('heartbeat', { timestamp: Date.now() });
+        }
+      }, 30000);
 
       // 监听部署日志
       this.socket.on('deploy_log', (data) => {
@@ -4950,6 +4980,9 @@ export default {
 
           // 自动滚动到底部
           this.scrollToBottom();
+          
+          // 重置无活动计时器
+          this.resetInactivityTimer();
         }
       });
 
@@ -4958,6 +4991,9 @@ export default {
         console.log('部署完成:', data);
         this.deployComplete = true;
         this.deploySuccess = data.success;
+
+        // 清除心跳和无活动检测
+        this.clearTimers();
 
         if (data.success) {
           this.scriptExists = true;
@@ -4982,6 +5018,11 @@ export default {
         this.scrollToBottom();
       });
 
+      // 监听服务器发送的心跳响应
+      this.socket.on('heartbeat_response', () => {
+        console.log('收到心跳响应');
+      });
+
       // 监听连接错误
       this.socket.on('connect_error', (error) => {
         console.error('WebSocket连接错误:', error);
@@ -4991,6 +5032,62 @@ export default {
         });
         this.scrollToBottom();
       });
+      
+      // 设置无活动检测，2分钟没有任何日志就提示用户
+      this.setupInactivityDetection();
+    },
+    
+    // 清除所有计时器
+    clearTimers() {
+      if (this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = null;
+      }
+      
+      if (this.inactivityTimer) {
+        clearTimeout(this.inactivityTimer);
+        this.inactivityTimer = null;
+      }
+      
+      if (this.connectTimeoutTimer) {
+        clearTimeout(this.connectTimeoutTimer);
+        this.connectTimeoutTimer = null;
+      }
+    },
+    
+    // 设置无活动检测
+    setupInactivityDetection() {
+      // 清除之前的定时器
+      if (this.inactivityTimer) {
+        clearTimeout(this.inactivityTimer);
+      }
+      
+      // 设置新的定时器 - 2分钟无活动提示
+      this.inactivityTimer = setTimeout(() => {
+        if (this.deploying && !this.deployComplete) {
+          this.deployLogs.push({
+            type: 'warning',
+            message: '已经2分钟没有收到任何日志更新，服务器可能仍在执行操作。部署可能需要较长时间，请耐心等待...'
+          });
+          this.scrollToBottom();
+          
+          // 再次设置无活动检测，检查是否真的卡住了
+          this.inactivityTimer = setTimeout(() => {
+            if (this.deploying && !this.deployComplete) {
+              this.deployLogs.push({
+                type: 'warning',
+                message: '长时间未收到任何日志更新，您可以继续等待或尝试刷新页面重试'
+              });
+              this.scrollToBottom();
+            }
+          }, 180000); // 再等3分钟
+        }
+      }, 120000); // 2分钟
+    },
+    
+    // 重置无活动定时器
+    resetInactivityTimer() {
+      this.setupInactivityDetection();
     },
 
     // 实现WebSocket部署方法

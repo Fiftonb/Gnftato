@@ -581,6 +581,127 @@ class SSHService {
   }
 
   /**
+   * 执行命令并提供流式实时输出 - 专为长时间运行脚本设计
+   * @param {string} serverId - 服务器ID
+   * @param {string} command - 要执行的命令
+   * @param {function} streamCallback - 流数据回调函数，接收(line, type)参数
+   * @returns {Promise<object>} - 命令执行结果
+   */
+  async executeCommandWithStream(serverId, command, streamCallback) {
+    try {
+      console.log(`[流式执行] 准备在服务器 ${serverId} 上执行命令: ${command}`);
+      
+      // 检查连接状态
+      if (!this.checkConnection(serverId)) {
+        console.log(`SSH连接无效，尝试重新连接，服务器ID: ${serverId}`);
+        try {
+          await this.connect(serverId);
+        } catch (connectError) {
+          console.error(`重新连接服务器失败，服务器ID: ${serverId}, 错误: ${connectError.message}`);
+          if (streamCallback) {
+            streamCallback(`重新连接服务器失败: ${connectError.message}`, 'error');
+          }
+          throw new Error(`无法连接到服务器 - ${connectError.message}`);
+        }
+      }
+      
+      const conn = this.connections[serverId];
+      if (!conn) {
+        const error = new Error('SSH连接不存在');
+        if (streamCallback) {
+          streamCallback('SSH连接不存在', 'error');
+        }
+        throw error;
+      }
+      
+      return new Promise((resolve, reject) => {
+        console.log(`[流式执行] 开始执行命令: ${command}`);
+        
+        conn.exec(command, (err, stream) => {
+          if (err) {
+            console.error(`[流式执行] 创建命令流失败: ${err.message}`);
+            if (streamCallback) {
+              streamCallback(`创建命令流失败: ${err.message}`, 'error');
+            }
+            reject(err);
+            return;
+          }
+          
+          let stdout = '';
+          let stderr = '';
+          let exitCode = -1;
+          
+          // 处理标准输出流
+          stream.on('data', (data) => {
+            const text = data.toString();
+            stdout += text;
+            
+            // 按行分割并传递给回调函数
+            if (streamCallback) {
+              const lines = text.split('\n');
+              lines.forEach(line => {
+                if (line.trim()) {
+                  streamCallback(line.trim(), 'log');
+                }
+              });
+            }
+          });
+          
+          // 处理标准错误流
+          stream.stderr.on('data', (data) => {
+            const text = data.toString();
+            stderr += text;
+            
+            // 按行分割并传递给回调函数
+            if (streamCallback) {
+              const lines = text.split('\n');
+              lines.forEach(line => {
+                if (line.trim()) {
+                  streamCallback(line.trim(), 'error');
+                }
+              });
+            }
+          });
+          
+          // 命令结束处理
+          stream.on('close', (code) => {
+            exitCode = code;
+            console.log(`[流式执行] 命令执行完成，退出码: ${code}`);
+            if (streamCallback) {
+              if (code === 0) {
+                streamCallback('命令执行完成', 'success');
+              } else {
+                streamCallback(`命令执行失败，退出码: ${code}`, 'error');
+              }
+            }
+            
+            resolve({
+              code: exitCode,
+              stdout: stdout,
+              stderr: stderr
+            });
+          });
+          
+          // 处理流错误
+          stream.on('error', (streamErr) => {
+            console.error(`[流式执行] 流错误: ${streamErr.message}`);
+            if (streamCallback) {
+              streamCallback(`流错误: ${streamErr.message}`, 'error');
+            }
+            reject(streamErr);
+          });
+        });
+      });
+    } catch (error) {
+      console.error(`[流式执行] 执行命令异常: ${error.message}`);
+      if (streamCallback) {
+        streamCallback(`执行命令异常: ${error.message}`, 'error');
+      }
+      throw error;
+    }
+  }
+
+  /**
    * 使用WebSocket实时日志输出部署Nftato脚本
    * @param {string} serverId 服务器ID
    * @param {function} logCallback 日志回调函数，用于发送实时日志
@@ -638,21 +759,18 @@ class SSHService {
       // 下载脚本
       logCallback('开始下载Nftato脚本...', 'log');
       
-      // 构建部署命令
-      const deployCommands = [
+      // 修改部署流程 - 分两部分，先下载准备工作，再流式执行脚本
+      const prepareCommands = [
         'cd ~',
         'wget -N --no-check-certificate https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh',
-        'chmod +x Nftato.sh',
-        './Nftato.sh || echo "Script executed with errors"'
+        'chmod +x Nftato.sh'
       ];
       
-      // 执行每个命令并实时输出日志
-      for (const cmd of deployCommands) {
+      // 执行准备命令
+      for (const cmd of prepareCommands) {
         logCallback(`执行命令: ${cmd}`, 'log');
         
-        const result = await this.executeCommand(serverId, cmd, (line) => {
-          logCallback(line, 'log');
-        });
+        const result = await this.executeCommand(serverId, cmd);
         
         // 记录命令输出
         if (result.stdout) {
@@ -677,6 +795,27 @@ class SSHService {
           logCallback(`命令执行失败: ${cmd}`, 'error');
           return { success: false, error: `部署命令失败: ${cmd}` };
         }
+      }
+      
+      // 使用流式方法执行Nftato.sh脚本
+      logCallback('开始执行Nftato.sh脚本...', 'log');
+      logCallback('这可能需要几分钟时间，请耐心等待...', 'log');
+      
+      try {
+        // 添加AUTOMATED环境变量，让脚本知道它是在自动模式下运行
+        const scriptResult = await this.executeCommandWithStream(
+          serverId, 
+          'AUTOMATED=yes ./Nftato.sh || echo "Script execution failed"',
+          (line, type) => logCallback(line, type)
+        );
+        
+        if (scriptResult.code !== 0) {
+          logCallback(`脚本执行失败，退出码: ${scriptResult.code}`, 'error');
+          return { success: false, error: `脚本执行失败，退出码: ${scriptResult.code}` };
+        }
+      } catch (scriptError) {
+        logCallback(`脚本执行异常: ${scriptError.message}`, 'error');
+        return { success: false, error: `脚本执行异常: ${scriptError.message}` };
       }
       
       // 验证部署结果

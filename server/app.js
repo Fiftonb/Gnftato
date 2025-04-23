@@ -138,6 +138,12 @@ app.io = io;
 io.on('connection', (socket) => {
   console.log('新的WebSocket连接:', socket.id);
   
+  // 处理心跳请求
+  socket.on('heartbeat', (data) => {
+    // 响应心跳，保持连接活跃
+    socket.emit('heartbeat_response', { timestamp: Date.now() });
+  });
+  
   // 处理部署请求
   socket.on('start_deploy', async (data) => {
     console.log('收到部署请求:', data);

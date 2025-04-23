@@ -17,6 +17,31 @@ Info="${Green_font_prefix}[信息]${Font_color_suffix}"
 Error="${Red_font_prefix}[错误]${Font_color_suffix}"
 Yellow_font_prefix="\033[33m"
 
+# 检查是否在自动化模式下运行
+is_automated=0
+if [ "$AUTOMATED" = "yes" ] || [ "$AUTOMATED" = "true" ] || [ "$AUTOMATED" = "1" ]; then
+    is_automated=1
+    echo -e "${Info} 检测到自动化模式，将跳过交互式操作"
+fi
+
+# 读取用户输入，带自动化模式支持
+auto_read() {
+    local prompt="$1"
+    local default="$2"
+    
+    # 在自动化模式下使用默认值
+    if [ $is_automated -eq 1 ]; then
+        echo -e "${Info} 自动化模式：使用默认值 [${default}]"
+        echo "$default"
+        return
+    fi
+    
+    # 正常交互模式
+    local input
+    read -e -p "$prompt" input
+    echo "${input:-$default}"
+}
+
 # 全局配置变量
 checkfile="/root/checkfile_nftato.txt"
 nft_conf="/etc/nftables.conf"
@@ -597,8 +622,14 @@ display_out_port() {
 
 # 封禁指定出网端口
 disable_want_port_out() {
+    echo -e "请输入要封禁出网的端口"
+    PORT=$(auto_read "(回车默认取消):" "")
+    
+    if [[ -z "${PORT}" ]]; then
+        echo "已取消..." && display_out_port && exit 0
+    fi
+
     s="add"
-    input_disable_want_outport
     set_out_ports
     echo -e "${Info} 已封禁端口 [ ${PORT} ] !\n"
     disable_port_type_1="1"
@@ -2412,6 +2443,16 @@ check_run
 check_docker_env
 action=$1
 extra_param=$2
+
+# 检查是否在自动化模式下运行
+if [ $is_automated -eq 1 ]; then
+    echo -e "${Info} 自动化模式：开始初始化环境"
+    # 在自动模式下，直接执行初始化
+    setup_nftables_base
+    able_ssh_port
+    echo -e "${Info} 自动化模式：初始化完成，防火墙已设置"
+    exit 0
+fi
 
 if [[ ! -z $action ]]; then
     # 支持数字参数，直接执行对应功能
