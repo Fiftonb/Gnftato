@@ -634,7 +634,8 @@ set_out_ports() {
     elif [[ "$s" == "delete" ]]; then
         # 查找并删除匹配的规则
         # 修改搜索模式以确保找到正确的规则
-        nft -a list chain inet filter output | grep "dport.*{.*$PORT.*}" | grep -i "出网端口封禁TCP\|出网端口封禁UDP" | while read -r line; do
+        # 更新后的代码应该是：
+        nft -a list chain inet filter output | grep "dport.*$PORT" | grep -i "出网端口封禁TCP\|出网端口封禁UDP" | while read -r line; do
             handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
             if [ -n "$handle" ]; then
                 nft delete rule inet filter output handle $handle
