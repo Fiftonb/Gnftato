@@ -23,10 +23,9 @@
       "authType": "password",
       "password": "Mj6(6r%7ekE=MRRU",
       "privateKey": "",
-      "status": "online",
+      "status": "offline",
       "createdAt": "2025-04-22T18:02:55.939Z",
-      "updatedAt": "2025-04-22T20:04:52.362Z",
-      "lastConnection": "2025-04-22T20:04:52.362Z"
+      "updatedAt": "2025-04-23T04:08:52.708Z"
     }
   ]
 }
