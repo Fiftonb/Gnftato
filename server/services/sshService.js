@@ -641,9 +641,9 @@ class SSHService {
       // 构建部署命令
       const deployCommands = [
         'cd ~',
-        'wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh',
+        'wget -N --no-check-certificate https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh',
         'chmod +x Nftato.sh',
-        './Nftato.sh --help || echo "Script executed with errors"'
+        './Nftato.sh || echo "Script executed with errors"'
       ];
       
       // 执行每个命令并实时输出日志
