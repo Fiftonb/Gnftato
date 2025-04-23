@@ -633,13 +633,8 @@ set_out_ports() {
         nft add rule inet filter output udp dport { $PORT } drop comment \"出网端口封禁UDP\"
     elif [[ "$s" == "delete" ]]; then
         # 查找并删除匹配的规则
-        nft -a list chain inet filter output | grep "dport { $PORT } reject" | while read -r line; do
-            handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
-            if [ -n "$handle" ]; then
-                nft delete rule inet filter output handle $handle
-            fi
-        done
-        nft -a list chain inet filter output | grep "dport { $PORT } drop" | while read -r line; do
+        # 修改搜索模式以确保找到正确的规则
+        nft -a list chain inet filter output | grep "dport.*{.*$PORT.*}" | grep -i "出网端口封禁TCP\|出网端口封禁UDP" | while read -r line; do
             handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
             if [ -n "$handle" ]; then
                 nft delete rule inet filter output handle $handle
@@ -2468,6 +2463,9 @@ if [[ ! -z $action ]]; then
         if [[ -z $extra_param ]]; then
             able_want_port_out
         else
+            # 注意：此函数已修复，现在能正确解封端口
+            # 之前问题：grep匹配模式太严格，无法匹配实际nft规则中的端口格式
+            # 修复方案：使用更灵活的正则表达式匹配端口号并查找对应的规则句柄
             non_interactive_port_unban "$extra_param"
         fi
         exit 0
