@@ -9,10 +9,10 @@
       "authType": "password",
       "password": "m?8F_f[ks$CTL4F*",
       "privateKey": "",
-      "status": "offline",
+      "status": "online",
       "createdAt": "2025-04-21T08:23:05.338Z",
-      "updatedAt": "2025-04-22T17:47:35.569Z",
-      "lastConnection": "2025-04-22T17:46:19.559Z"
+      "updatedAt": "2025-04-23T06:12:33.842Z",
+      "lastConnection": "2025-04-23T06:12:33.842Z"
     },
     {
       "_id": "59e34e3c-adef-4422-aca9-14b4f67e0165",
@@ -25,7 +25,7 @@
       "privateKey": "",
       "status": "offline",
       "createdAt": "2025-04-22T18:02:55.939Z",
-      "updatedAt": "2025-04-23T04:08:52.708Z"
+      "updatedAt": "2025-04-23T06:12:03.435Z"
     }
   ]
 }
