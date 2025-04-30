@@ -674,4 +674,43 @@ exports.checkScriptExists = async (req, res) => {
       error: error.message
     });
   }
+};
+
+/**
+ * 测试服务器连接
+ */
+exports.testConnection = async (req, res) => {
+  try {
+    // 获取请求中的服务器信息
+    const serverData = req.body;
+    
+    console.log('接收到测试连接请求:', {
+      host: serverData.host,
+      port: serverData.port,
+      username: serverData.username,
+      authType: serverData.authType
+    });
+    
+    if (!serverData.host || !serverData.username) {
+      return res.status(400).json({
+        success: false,
+        message: '缺少必要的连接信息'
+      });
+    }
+    
+    // 测试连接
+    const result = await sshService.testConnection(serverData);
+    
+    res.status(200).json({
+      success: true,
+      message: '连接测试成功',
+      data: result
+    });
+  } catch (error) {
+    console.error('测试连接失败:', error);
+    res.status(400).json({
+      success: false,
+      message: '连接测试失败: ' + error.message
+    });
+  }
 }; 

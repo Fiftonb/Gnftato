@@ -179,6 +179,22 @@ const actions = {
     }
   },
   
+  // 测试服务器连接
+  async testConnection({ commit }, serverData) {
+    commit('setLoading', true);
+    commit('setError', null);
+    
+    try {
+      const response = await axios.post(`${API_URL}/test-connection`, serverData);
+      return response.data;
+    } catch (error) {
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    } finally {
+      commit('setLoading', false);
+    }
+  },
+  
   async executeCommand({ commit }, { serverId, command }) {
     commit('setLoading', true);
     commit('setError', null);

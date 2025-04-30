@@ -184,7 +184,7 @@
       ></server-form>
       <div slot="footer" class="dialog-footer">
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button v-if="!isEdit" type="primary" @click="handleTestConnection">测试连接</el-button>
+        <el-button v-if="!isEdit" type="primary" @click="handleTestConnection" :loading="testingConnection">测试连接</el-button>
         <el-button type="primary" @click="$refs.serverForm.submitForm()">确定</el-button>
       </div>
     </el-dialog>
@@ -225,7 +225,8 @@ export default {
       reconnectCounters: {}, // 记录重连次数
       sessionId: '', // 用于检测面板服务器重启
       isServerRestarted: false, // 标记面板是否重启过
-      isRetrying: false // 防止重复触发
+      isRetrying: false, // 防止重复触发
+      testingConnection: false // 添加测试连接加载状态
     };
   },
   computed: {
@@ -526,11 +527,28 @@ export default {
       const formData = this.$refs.serverForm.getFormData();
       if (!formData) return;
       
+      // 设置测试连接加载状态
+      this.$set(this, 'testingConnection', true);
+      
       try {
+        // 显示加载提示
+        const loadingMessage = this.$message({
+          message: '正在测试连接，请稍候...',
+          type: 'info',
+          duration: 0,
+          showClose: true
+        });
+        
         await this.testConnection(formData);
+        
+        // 关闭加载提示
+        loadingMessage.close();
         this.$message.success('连接测试成功');
       } catch (error) {
         this.$message.error('连接测试失败: ' + error.message);
+      } finally {
+        // 重置测试连接加载状态
+        this.$set(this, 'testingConnection', false);
       }
     },
     async handleFormSubmit(formData) {

@@ -952,6 +952,66 @@ class SSHService {
       };
     }
   }
+
+  /**
+   * 测试SSH连接
+   * @param {Object} serverData - 服务器连接数据
+   * @returns {Promise<object>} - 测试结果
+   */
+  async testConnection(serverData) {
+    const conn = new Client();
+    
+    // 准备连接配置
+    const config = {
+      host: serverData.host,
+      port: serverData.port || 22,
+      username: serverData.username,
+      readyTimeout: 10000, // 10秒连接超时
+    };
+    
+    // 根据认证类型设置认证信息
+    if (serverData.authType === 'password') {
+      config.password = serverData.password;
+    } else {
+      config.privateKey = serverData.privateKey;
+    }
+    
+    console.log(`开始测试连接，主机: ${serverData.host}:${config.port}, 用户: ${serverData.username}`);
+    
+    // 创建Promise以处理连接
+    return new Promise((resolve, reject) => {
+      // 连接错误处理
+      conn.on('error', (err) => {
+        console.error(`测试连接错误: ${err.message}`);
+        reject(err);
+      });
+      
+      // 准备连接
+      conn.on('ready', () => {
+        console.log(`测试连接成功`);
+        // 连接成功后立即断开
+        conn.end();
+        resolve({
+          success: true,
+          message: '连接测试成功'
+        });
+      });
+      
+      // 连接超时处理
+      conn.on('timeout', () => {
+        console.error(`测试连接超时`);
+        reject(new Error('连接超时'));
+      });
+      
+      // 尝试连接
+      try {
+        conn.connect(config);
+      } catch (error) {
+        console.error(`连接配置错误: ${error.message}`);
+        reject(error);
+      }
+    });
+  }
 }
 
 module.exports = new SSHService(); 

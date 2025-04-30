@@ -24,6 +24,7 @@ router.delete('/:id', serverController.deleteServer);
 // 服务器连接路由
 router.post('/:id/connect', serverController.connectServer);
 router.post('/:id/disconnect', serverController.disconnectServer);
+router.post('/test-connection', serverController.testConnection);
 router.post('/:id/execute', serverController.executeCommand);
 router.get('/:id/status', serverController.checkServerStatus);
 router.get('/:id/logs', serverController.getServerLogs);

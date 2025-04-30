@@ -105,6 +105,19 @@ export default {
     },
     resetForm() {
       this.$refs.serverForm.resetFields();
+    },
+    getFormData() {
+      let valid = false;
+      this.$refs.serverForm.validate(isValid => {
+        valid = isValid;
+      });
+      
+      if (!valid) {
+        this.$message.warning('请填写完整的服务器信息');
+        return null;
+      }
+      
+      return { ...this.form };
     }
   }
 }

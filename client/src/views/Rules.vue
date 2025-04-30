@@ -576,16 +576,47 @@ export default {
         vm.$router.push('/servers');
       });
     } else {
-      next();
+      // 添加一个标记，表示已经通过路由进入了
+      to.params._fromRouterEnter = true;
+      
+      next(vm => {
+        // 从服务器列表页面进入时，记录来源并在初始化后进行额外的UI刷新
+        const fromServersList = from.name === 'servers';
+        
+        // 等待Vue实例初始化完成
+        vm.$nextTick(async () => {
+          await vm.initializeApplication();
+          
+          // 如果是从服务器列表页面进入，添加额外的UI强制刷新
+          if (fromServersList && vm.isInitialized) {
+            // 先延迟执行，确保数据已加载
+            setTimeout(() => {
+              // 强制更新UI组件
+              vm.$forceUpdate();
+              
+              // 如果正在显示入网控制标签页，确保数据正确显示
+              if (vm.activeTab === 'inbound' && vm.isServerOnline && vm.scriptExists) {
+                // 尝试重新获取最新数据
+                vm.refreshInboundPorts();
+                vm.refreshInboundIPs();
+              }
+            }, 800);
+          }
+        });
+      });
     }
   },
   created() {
     this.activeTab = 'inbound';
 
     if (this.hasValidServerId) {
-      this.$nextTick(async () => {
-        await this.initializeApplication();
-      });
+      // 如果是通过直接导航来到此页面而不是通过路由跳转，才需要初始化
+      // 路由跳转的情况已在beforeRouteEnter中处理
+      if (!this.$route.params._fromRouterEnter) {
+        this.$nextTick(async () => {
+          await this.initializeApplication();
+        });
+      }
 
       this.startServerStatusCheck();
     } else {
@@ -707,10 +738,14 @@ export default {
           // 添加延迟以确保UI更新完成
           setTimeout(() => {
             this.refreshAllData();
+            // 强制更新UI，确保数据显示正确
+            this.$forceUpdate();
           }, 500);
         } else if (cacheLoaded) {
           // 使用缓存数据
           this.loadCachedData();
+          // 强制更新UI，确保缓存数据显示正确
+          this.$forceUpdate();
         }
 
         return true;
