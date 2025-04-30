@@ -2,19 +2,27 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# 设置默认环境变量
+ENV NODE_ENV=development
+ENV PORT=3001
+ENV JWT_SECRET=default_secret_please_change
+ENV CORS_ORIGIN=*
+
 # 复制package.json文件
 COPY package*.json ./
 COPY server/package*.json ./server/
+COPY client/package*.json ./client/
 
 # 安装依赖
 RUN npm install
-RUN cd server && npm install
-
-# 复制配置文件
-COPY server/config.json ./server/
+RUN cd server && npm install --production=false
+RUN cd client && npm install
 
 # 复制应用程序代码
 COPY . .
+
+# 构建前端
+RUN npm run build
 
 # 给启动脚本添加执行权限
 RUN chmod +x /app/server/start.sh
