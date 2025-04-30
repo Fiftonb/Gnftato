@@ -528,25 +528,25 @@ export default {
       // 如果dataCache中没有inboundPorts或结构不正确，返回空数组
       const portsData = this.dataCache.inboundPorts;
       if (!portsData) return [];
-      
+
       // 如果是旧格式（数组），直接返回
       if (Array.isArray(portsData)) return portsData;
-      
+
       // 从原始格式 {tcp: [], udp: []} 生成表格数据
       if (portsData.tcp || portsData.udp) {
         const tcpPorts = Array.isArray(portsData.tcp) ? portsData.tcp : [];
         const udpPorts = Array.isArray(portsData.udp) ? portsData.udp : [];
-        
+
         // 合并去重
         const uniquePorts = [...new Set([...tcpPorts, ...udpPorts])];
-        
+
         // 生成表格数据格式
         return uniquePorts.map(port => ({
           port,
           protocol: 'TCP/UDP'
         }));
       }
-      
+
       return [];
     },
     // 添加更细致的服务器状态文本
@@ -578,27 +578,34 @@ export default {
     } else {
       // 添加一个标记，表示已经通过路由进入了
       to.params._fromRouterEnter = true;
-      
+
       next(vm => {
         // 从服务器列表页面进入时，记录来源并在初始化后进行额外的UI刷新
         const fromServersList = from.name === 'servers';
-        
+
         // 等待Vue实例初始化完成
         vm.$nextTick(async () => {
           await vm.initializeApplication();
-          
+
           // 如果是从服务器列表页面进入，添加额外的UI强制刷新
           if (fromServersList && vm.isInitialized) {
             // 先延迟执行，确保数据已加载
             setTimeout(() => {
               // 强制更新UI组件
               vm.$forceUpdate();
-              
+
               // 如果正在显示入网控制标签页，确保数据正确显示
               if (vm.activeTab === 'inbound' && vm.isServerOnline && vm.scriptExists) {
+                // 添加对SSH端口状态的刷新
+                vm.refreshSSHPort();
                 // 尝试重新获取最新数据
                 vm.refreshInboundPorts();
                 vm.refreshInboundIPs();
+
+                // 再次强制更新，确保SSH端口状态显示
+                setTimeout(() => {
+                  vm.$forceUpdate();
+                }, 300);
               }
             }, 800);
           }
@@ -629,7 +636,7 @@ export default {
       this.socket.disconnect();
       this.socket = null;
     }
-    
+
     // 清理所有定时器
     this.clearTimers();
   },
@@ -884,8 +891,8 @@ export default {
 
       // 检查缓存是否有效
       const now = Date.now();
-      if (this.dataCache.inboundPorts && 
-          (now - this.cacheTimestamps.inboundPorts) < this.cacheTTL.inboundPorts) {
+      if (this.dataCache.inboundPorts &&
+        (now - this.cacheTimestamps.inboundPorts) < this.cacheTTL.inboundPorts) {
         console.log('使用缓存的入网端口数据');
         return;
       }
@@ -901,7 +908,7 @@ export default {
           if (response && response.success) {
             // 获取原始端口数据
             const portsData = response.data || {};
-            
+
             // 存储原始格式到dataCache
             if (Array.isArray(portsData)) {
               // 兼容处理：后端返回了数组格式(旧数据)，转换为原始格式
@@ -910,7 +917,7 @@ export default {
                 tcp: portNumbers,
                 udp: portNumbers
               };
-              
+
               // 更新服务器缓存为标准格式
               try {
                 if (this.hasValidServerId) {
@@ -926,7 +933,7 @@ export default {
               // 初始化空数据
               this.dataCache.inboundPorts = { tcp: [], udp: [] };
             }
-            
+
             this.cacheTimestamps.inboundPorts = now;
             this.dataLoaded.inboundPorts = true;
             break;
@@ -981,7 +988,7 @@ export default {
       console.log('缓存inboundIPs已失效');
 
       const now = Date.now();
-      if (this.dataCache.inboundIPs && 
+      if (this.dataCache.inboundIPs &&
         Array.isArray(this.dataCache.inboundIPs) &&
         (now - this.cacheTimestamps.inboundIPs) < this.cacheTTL.inboundIPs) {
         // 确保克隆数组而不是引用
@@ -1001,11 +1008,11 @@ export default {
           if (response && response.success) {
             // 确保响应数据是数组，并处理不同的数据格式
             const ipsData = response.data || [];
-            
+
             // 检查数据类型并确保转换为数组格式
             if (Array.isArray(ipsData)) {
               // 如果是数组但元素不是对象，转换为对象格式
-              this.inboundIPs = ipsData.map(ip => 
+              this.inboundIPs = ipsData.map(ip =>
                 typeof ip === 'string' ? { ip } : ip
               );
             } else if (ipsData && typeof ipsData === 'object') {
@@ -1015,7 +1022,7 @@ export default {
                 // 尝试从对象中提取IP
                 if (Object.keys(ipsData).length > 0) {
                   const extractedIPs = [];
-                  
+
                   for (const key in ipsData) {
                     if (typeof ipsData[key] === 'string') {
                       extractedIPs.push({ ip: ipsData[key] });
@@ -1029,7 +1036,7 @@ export default {
                       });
                     }
                   }
-                  
+
                   this.inboundIPs = extractedIPs;
                 }
               } catch (parseError) {
@@ -1039,12 +1046,12 @@ export default {
             } else {
               this.inboundIPs = [];
             }
-            
+
             // 验证所有项都是合法的对象
-            this.inboundIPs = this.inboundIPs.filter(item => 
+            this.inboundIPs = this.inboundIPs.filter(item =>
               item && typeof item === 'object' && typeof item.ip === 'string'
             );
-            
+
             // 更新缓存时创建新数组
             this.dataCache.inboundIPs = [...this.inboundIPs];
             this.cacheTimestamps.inboundIPs = now;
@@ -1093,7 +1100,7 @@ export default {
       if (!Array.isArray(this.inboundIPs)) {
         this.inboundIPs = [];
       }
-      
+
       // 改进的强制重新渲染逻辑
       const currentData = [...this.inboundIPs];
       // 先清空，然后在下一个渲染周期重新赋值
@@ -2128,11 +2135,11 @@ export default {
     },
     invalidateCache(cacheKey) {
       if (!cacheKey) return;
-      
+
       try {
         // 重置缓存时间戳
         this.cacheTimestamps[cacheKey] = 0;
-        
+
         // 根据不同的缓存类型设置初始值
         if (cacheKey === 'inboundPorts' || cacheKey === 'inboundIPs') {
           // 对于数组类型的缓存，确保重置为空数组
@@ -2147,7 +2154,7 @@ export default {
           // 其他类型的缓存设置为null
           this.dataCache[cacheKey] = null;
         }
-        
+
         console.log(`缓存${cacheKey}已失效`);
       } catch (error) {
         console.error(`重置缓存${cacheKey}时出错:`, error);
@@ -2218,7 +2225,7 @@ export default {
         if (cache.data.inboundPorts) {
           // 直接存储原始格式，无需转换
           const portsData = cache.data.inboundPorts;
-          
+
           // 确保数据格式为原始格式
           if (Array.isArray(portsData)) {
             // 如果是数组格式，转换为原始格式
@@ -2234,7 +2241,7 @@ export default {
             // 兜底处理
             this.dataCache.inboundPorts = { tcp: [], udp: [] };
           }
-          
+
           this.cacheTimestamps.inboundPorts = Date.now();
           this.dataLoaded.inboundPorts = true;
         }
@@ -2287,12 +2294,12 @@ export default {
 
           // 构建更新后的数据结构
           const updateData = { ...cache.data };
-          
+
           // 确保updateData.data存在
           if (!updateData.data) {
             updateData.data = {};
           }
-          
+
           updateData.data[cacheKey] = data;
 
           // 调用后端API更新缓存项
@@ -2483,10 +2490,10 @@ export default {
 
         if (response && response.success) {
           this.$message.success(`成功允许入网端口: ${this.portToAllow}`);
-          
+
           // 手动更新本地缓存
           const newPorts = this.portToAllow.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
-          
+
           if (this.dataCache.inboundPorts) {
             // 确保tcp/udp数组存在
             if (!this.dataCache.inboundPorts.tcp) {
@@ -2495,15 +2502,15 @@ export default {
             if (!this.dataCache.inboundPorts.udp) {
               this.dataCache.inboundPorts.udp = [];
             }
-            
+
             // 添加新端口并去重
             this.dataCache.inboundPorts.tcp = [...new Set([...this.dataCache.inboundPorts.tcp, ...newPorts])];
             this.dataCache.inboundPorts.udp = [...new Set([...this.dataCache.inboundPorts.udp, ...newPorts])];
-            
+
             // 更新缓存时间戳以触发计算属性重新计算
             this.cacheTimestamps.inboundPorts = Date.now();
           }
-          
+
           this.portToAllow = '';
         } else {
           this.$message.error(response?.error || '允许入网端口失败');
@@ -2515,7 +2522,7 @@ export default {
         this.loadingAction = false;
       }
     },
-    
+
     async executeDisallowPort(port) {
       try {
         this.loadingPorts = true;
@@ -2528,7 +2535,7 @@ export default {
 
         if (response && response.success) {
           this.$message.success(`成功取消放行端口: ${port}`);
-          
+
           // 手动更新本地缓存数据
           if (this.dataCache.inboundPorts) {
             // 从tcp和udp数组中移除该端口
@@ -2538,7 +2545,7 @@ export default {
             if (this.dataCache.inboundPorts.udp) {
               this.dataCache.inboundPorts.udp = this.dataCache.inboundPorts.udp.filter(p => p !== port);
             }
-            
+
             // 更新缓存时间戳以触发计算属性重新计算
             this.cacheTimestamps.inboundPorts = Date.now();
           }
@@ -3409,11 +3416,11 @@ export default {
     },
     invalidateCache(cacheKey) {
       if (!cacheKey) return;
-      
+
       try {
         // 重置缓存时间戳
         this.cacheTimestamps[cacheKey] = 0;
-        
+
         // 根据不同的缓存类型设置初始值
         if (cacheKey === 'inboundPorts' || cacheKey === 'inboundIPs') {
           // 对于数组类型的缓存，确保重置为空数组
@@ -3428,7 +3435,7 @@ export default {
           // 其他类型的缓存设置为null
           this.dataCache[cacheKey] = null;
         }
-        
+
         console.log(`缓存${cacheKey}已失效`);
       } catch (error) {
         console.error(`重置缓存${cacheKey}时出错:`, error);
@@ -3499,7 +3506,7 @@ export default {
         if (cache.data.inboundPorts) {
           // 直接存储原始格式，无需转换
           const portsData = cache.data.inboundPorts;
-          
+
           // 确保数据格式为原始格式
           if (Array.isArray(portsData)) {
             // 如果是数组格式，转换为原始格式
@@ -3515,7 +3522,7 @@ export default {
             // 兜底处理
             this.dataCache.inboundPorts = { tcp: [], udp: [] };
           }
-          
+
           this.cacheTimestamps.inboundPorts = Date.now();
           this.dataLoaded.inboundPorts = true;
         }
@@ -3568,12 +3575,12 @@ export default {
 
           // 构建更新后的数据结构
           const updateData = { ...cache.data };
-          
+
           // 确保updateData.data存在
           if (!updateData.data) {
             updateData.data = {};
           }
-          
+
           updateData.data[cacheKey] = data;
 
           // 调用后端API更新缓存项
@@ -4355,11 +4362,11 @@ export default {
     },
     invalidateCache(cacheKey) {
       if (!cacheKey) return;
-      
+
       try {
         // 重置缓存时间戳
         this.cacheTimestamps[cacheKey] = 0;
-        
+
         // 根据不同的缓存类型设置初始值
         if (cacheKey === 'inboundPorts' || cacheKey === 'inboundIPs') {
           // 对于数组类型的缓存，确保重置为空数组
@@ -4374,7 +4381,7 @@ export default {
           // 其他类型的缓存设置为null
           this.dataCache[cacheKey] = null;
         }
-        
+
         console.log(`缓存${cacheKey}已失效`);
       } catch (error) {
         console.error(`重置缓存${cacheKey}时出错:`, error);
@@ -4445,7 +4452,7 @@ export default {
         if (cache.data.inboundPorts) {
           // 直接存储原始格式，无需转换
           const portsData = cache.data.inboundPorts;
-          
+
           // 确保数据格式为原始格式
           if (Array.isArray(portsData)) {
             // 如果是数组格式，转换为原始格式
@@ -4461,7 +4468,7 @@ export default {
             // 兜底处理
             this.dataCache.inboundPorts = { tcp: [], udp: [] };
           }
-          
+
           this.cacheTimestamps.inboundPorts = Date.now();
           this.dataLoaded.inboundPorts = true;
         }
@@ -4514,12 +4521,12 @@ export default {
 
           // 构建更新后的数据结构
           const updateData = { ...cache.data };
-          
+
           // 确保updateData.data存在
           if (!updateData.data) {
             updateData.data = {};
           }
-          
+
           updateData.data[cacheKey] = data;
 
           // 调用后端API更新缓存项
@@ -4835,7 +4842,7 @@ export default {
 
         if (response && response.success) {
           this.$message.success(`成功取消放行端口: ${port}`);
-          
+
           // 手动更新本地缓存数据
           if (this.dataCache.inboundPorts) {
             // 从tcp和udp数组中移除该端口
@@ -4845,7 +4852,7 @@ export default {
             if (this.dataCache.inboundPorts.udp) {
               this.dataCache.inboundPorts.udp = this.dataCache.inboundPorts.udp.filter(p => p !== port);
             }
-            
+
             // 更新缓存时间戳以触发计算属性重新计算
             this.cacheTimestamps.inboundPorts = Date.now();
           }
@@ -4977,7 +4984,7 @@ export default {
 
         // 自动滚动到底部
         this.scrollToBottom();
-        
+
         // 清除之前的超时计时器
         if (this.connectTimeoutTimer) {
           clearTimeout(this.connectTimeoutTimer);
@@ -5015,7 +5022,7 @@ export default {
 
           // 自动滚动到底部
           this.scrollToBottom();
-          
+
           // 重置无活动计时器
           this.resetInactivityTimer();
         }
@@ -5041,27 +5048,27 @@ export default {
           setTimeout(() => {
             this.clearServerCacheAfterChange();
             this.refreshAllData();
-            
+
             // 部署成功后，延迟1.5秒让用户看到成功消息，然后刷新页面或切换视图
             setTimeout(() => {
               this.deployLogs.push({
                 type: 'success',
                 message: '正在加载功能界面...'
               });
-              
+
               // 这里有两种选择:
               // 1. 重新加载整个页面 - 最简单但体验不是最好
               // 2. 在当前页面切换到功能视图 - 更好的用户体验
-              
+
               // 方案2: 切换到功能视图，更新UI状态
               this.isInitialized = true;
               this.deploying = false;
               this.deployDialogVisible = false;   // 关闭部署对话框
               this.activeTab = 'inbound';         // 切换到入网控制标签
-              
+
               // 通知用户切换成功
               this.$message.success('部署成功，已加载功能界面');
-              
+
               // 强制更新组件
               this.$forceUpdate();
             }, 1500);
@@ -5091,36 +5098,36 @@ export default {
         });
         this.scrollToBottom();
       });
-      
+
       // 设置无活动检测，2分钟没有任何日志就提示用户
       this.setupInactivityDetection();
     },
-    
+
     // 清除所有计时器
     clearTimers() {
       if (this.heartbeatInterval) {
         clearInterval(this.heartbeatInterval);
         this.heartbeatInterval = null;
       }
-      
+
       if (this.inactivityTimer) {
         clearTimeout(this.inactivityTimer);
         this.inactivityTimer = null;
       }
-      
+
       if (this.connectTimeoutTimer) {
         clearTimeout(this.connectTimeoutTimer);
         this.connectTimeoutTimer = null;
       }
     },
-    
+
     // 设置无活动检测
     setupInactivityDetection() {
       // 清除之前的定时器
       if (this.inactivityTimer) {
         clearTimeout(this.inactivityTimer);
       }
-      
+
       // 设置新的定时器 - 2分钟无活动提示
       this.inactivityTimer = setTimeout(() => {
         if (this.deploying && !this.deployComplete) {
@@ -5129,7 +5136,7 @@ export default {
             message: '已经2分钟没有收到任何日志更新，服务器可能仍在执行操作。部署可能需要较长时间，请耐心等待...'
           });
           this.scrollToBottom();
-          
+
           // 再次设置无活动检测，检查是否真的卡住了
           this.inactivityTimer = setTimeout(() => {
             if (this.deploying && !this.deployComplete) {
@@ -5143,7 +5150,7 @@ export default {
         }
       }, 120000); // 2分钟
     },
-    
+
     // 重置无活动定时器
     resetInactivityTimer() {
       this.setupInactivityDetection();
