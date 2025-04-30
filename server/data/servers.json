@@ -1,17 +1,3 @@
 {
-  "servers": [
-    {
-      "_id": "53dd1b06-8247-4a77-b316-26e99e7b5465",
-      "name": "43.224.33.82",
-      "host": "43.224.33.82",
-      "port": 22,
-      "username": "root",
-      "authType": "password",
-      "password": "B8r*4pmu,HF5g(mg",
-      "privateKey": "",
-      "status": "offline",
-      "createdAt": "2025-04-23T15:15:20.796Z",
-      "updatedAt": "2025-04-23T15:57:02.088Z"
-    }
-  ]
+  "servers": []
 }
