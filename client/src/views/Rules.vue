@@ -427,7 +427,7 @@ import RulesScript from './RulesScript.js';
 export default RulesScript;
 </script>
 
-<style scoped>
+<style>
 .rules-container {
   padding: 20px;
 }
@@ -482,12 +482,13 @@ export default RulesScript;
   background-color: #f5f7fa;
   padding: 10px;
   border-radius: 4px;
+  font-family: monospace;
+  white-space: pre-wrap;
   margin-top: 10px;
 }
 
 .ip-manage-result pre {
   white-space: pre-wrap;
-  font-family: monospace;
   margin: 0;
 }
 
@@ -535,39 +536,6 @@ export default RulesScript;
 .loading-content i {
   font-size: 32px;
   color: #409EFF;
-}
-
-.ip-lists-dialog {
-  width: 600px;
-}
-
-.ip-tabs {
-  margin-top: 20px;
-}
-
-.full-width-btn {
-  width: 100%;
-}
-
-.mobile-footer {
-  display: flex;
-  justify-content: space-between;
-  padding: 10px;
-}
-
-.ddos-form {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.ban-duration-container {
-  display: flex;
-  align-items: center;
-}
-
-.form-item-tip {
-  margin-left: 10px;
 }
 
 /* IP黑白名单对话框样式 */
@@ -665,21 +633,9 @@ export default RulesScript;
   width: 100%;
 }
 
-.ip-manage-result {
-  margin-top: 15px;
-  padding: 10px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
-  max-height: 100px;
-  overflow-y: auto;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.ip-manage-result pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
+/* 确保对话框居中 */
+.el-dialog {
+  margin: 15vh auto !important;
 }
 
 /* 移动端适配样式 */
@@ -698,38 +654,6 @@ export default RulesScript;
     margin-bottom: 5px;
   }
 
-  .ip-lists-dialog.el-dialog {
-    margin: 0 !important;
-    height: 100%;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .ip-lists-dialog .el-dialog__body {
-    flex: 1;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: 10px 15px;
-  }
-
-  .ip-lists-dialog .el-dialog__header {
-    padding: 10px;
-    border-bottom: 1px solid #EBEEF5;
-  }
-
-  .ip-lists-dialog .el-dialog__title {
-    font-size: 16px;
-  }
-
-  .ip-lists-dialog .el-dialog__footer {
-    padding: 10px;
-    border-top: 1px solid #EBEEF5;
-    display: flex;
-    justify-content: flex-end;
-  }
-  
   .input-with-tip {
     flex-direction: column;
     align-items: flex-start;
@@ -747,11 +671,6 @@ export default RulesScript;
   
   .form-group {
     margin-bottom: 15px;
-  }
-  
-  .el-input-number.is-controls-right .el-input__inner {
-    padding-left: 5px;
-    padding-right: 40px;
   }
 }
 </style>

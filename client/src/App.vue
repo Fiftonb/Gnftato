@@ -107,4 +107,38 @@ html, body {
 .logout-btn:hover {
   background-color: rgba(255, 255, 255, 0.2);
 }
+
+/* 确保全局对话框居中 */
+.el-dialog {
+  margin: 0 auto !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  max-width: 90%;
+}
+
+.el-dialog__wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+
+/* 特定处理ip列表对话框 */
+.ip-lists-dialog .el-dialog {
+  margin: 5vh auto !important;
+}
+
+@media screen and (max-width: 768px) {
+  .el-dialog {
+    margin: 10px auto !important;
+    width: 90% !important;
+  }
+  
+  .ip-lists-dialog .el-dialog {
+    width: 95% !important;
+    margin: 2vh auto !important;
+  }
+}
 </style> 
