@@ -660,11 +660,29 @@ exports.checkScriptExists = async (req, res) => {
     const location = result.stdout.includes('exists_home') ? '~/Nftato.sh' : 
                     result.stdout.includes('exists_root') ? '/root/Nftato.sh' : '';
 
+    // 如果脚本存在，运行升级命令
+    let upgradeResult = null;
+    if (scriptExists) {
+      console.log(`在服务器 ${serverId} 上运行Nftato升级核心脚本命令`);
+      try {
+        const scriptPath = location === '~/Nftato.sh' ? '~/Nftato.sh' : '/root/Nftato.sh';
+        upgradeResult = await sshService.executeCommand(serverId, `bash ${scriptPath} 21`);
+        console.log('升级核心脚本结果:', upgradeResult);
+      } catch (upgradeError) {
+        console.error('运行升级命令失败:', upgradeError);
+      }
+    }
+
     res.status(200).json({
       success: true,
       exists: scriptExists,
       location: location,
-      message: scriptExists ? 'Nftato脚本已部署' : 'Nftato脚本未部署'
+      message: scriptExists ? 'Nftato脚本已部署' : 'Nftato脚本未部署',
+      upgradeResult: upgradeResult ? {
+        success: true,
+        stdout: upgradeResult.stdout,
+        stderr: upgradeResult.stderr
+      } : null
     });
   } catch (error) {
     console.error('检查脚本存在状态失败:', error);
