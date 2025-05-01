@@ -920,13 +920,13 @@ class NftablesService {
       // 提取IP部分 - 适应新的格式
       const ipSection = output.match(/=============== 当前已放行 IP ===============([\s\S]*?)={3,}/);
       if (ipSection && ipSection[1]) {
-        // 提取所有IP地址
-        const ipAddresses = ipSection[1].match(/\d+\.\d+\.\d+\.\d+/g) || [];
+        // 提取所有IP地址，包括带CIDR表示法的IP段
+        const ipAddresses = ipSection[1].match(/\d+\.\d+\.\d+\.\d+(?:\/\d+)?/g) || [];
         return ipAddresses;
       }
       
       // 如果没有找到特定格式，尝试提取所有IP地址
-      const ipAddresses = output.match(/\d+\.\d+\.\d+\.\d+/g) || [];
+      const ipAddresses = output.match(/\d+\.\d+\.\d+\.\d+(?:\/\d+)?/g) || [];
       return ipAddresses;
     } catch (error) {
       console.error(`[诊断] 解析IP输出失败: ${error.message}`);
