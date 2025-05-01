@@ -111,10 +111,6 @@ html, body {
 /* 确保全局对话框居中 */
 .el-dialog {
   margin: 0 auto !important;
-  position: absolute !important;
-  top: 50% !important;
-  left: 50% !important;
-  transform: translate(-50%, -50%) !important;
   max-width: 90%;
 }
 
@@ -123,6 +119,11 @@ html, body {
   align-items: center;
   justify-content: center;
   overflow: auto;
+}
+
+/* 适配服务器对话框 */
+.server-dialog .el-dialog {
+  margin: 15vh auto !important;
 }
 
 /* 特定处理ip列表对话框 */

@@ -2089,6 +2089,10 @@ export default {
     padding: 15px 10px;
   }
   
+  :deep(.server-dialog .el-dialog) {
+    margin: 5vh auto !important;
+  }
+  
   :deep(.server-dialog .el-form-item) {
     margin-bottom: 15px;
   }

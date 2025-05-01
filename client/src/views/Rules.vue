@@ -96,9 +96,9 @@
             </div>
 
             <el-table v-loading="loadingPorts" :data="formattedPorts" style="width: 100%">
-              <el-table-column prop="port" label="端口" width="180"></el-table-column>
+              <el-table-column prop="port" label="端口" width="100"></el-table-column>
               <el-table-column prop="protocol" label="协议" width="100"></el-table-column>
-              <el-table-column label="操作">
+              <el-table-column label="操作" width="110">
                 <template slot-scope="scope">
                   <el-tooltip v-if="isSshPort(scope.row.port)" content="不能取消SSH端口放行，这可能导致无法连接服务器" placement="top">
                     <el-button type="danger" size="mini" disabled>取消放行</el-button>

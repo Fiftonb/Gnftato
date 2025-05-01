@@ -1,8 +1,10 @@
 import { mapActions, mapGetters } from 'vuex';
 import io from 'socket.io-client';
+import RulesForward from './extensions/RulesForward';
 
 export default {
     name: 'RulesScript',
+    mixins: [RulesForward],
     props: {
         serverId: {
             type: String,
