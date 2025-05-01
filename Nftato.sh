@@ -7,7 +7,7 @@ export PATH
 #       Version: 2.0.2
 #=================================================
 
-sh_ver="2.0.2"
+sh_ver="2.0.3"
 Green_font_prefix="\033[32m"
 Red_font_prefix="\033[31m"
 Green_background_prefix="\033[42;37m"
@@ -28,14 +28,14 @@ fi
 auto_read() {
     local prompt="$1"
     local default="$2"
-    
+
     # 在自动化模式下使用默认值
     if [ $is_automated -eq 1 ]; then
         echo -e "${Info} 自动化模式：使用默认值 [${default}]"
         echo "$default"
         return
     fi
-    
+
     # 正常交互模式
     local input
     read -e -p "$prompt" input
@@ -624,7 +624,7 @@ display_out_port() {
 disable_want_port_out() {
     echo -e "请输入要封禁出网的端口"
     PORT=$(auto_read "(回车默认取消):" "")
-    
+
     if [[ -z "${PORT}" ]]; then
         echo "已取消..." && display_out_port && exit 0
     fi
@@ -2070,9 +2070,8 @@ Update_Shell() {
     # 比较版本
     if [[ "${sh_new_ver}" != "${sh_ver}" ]]; then
         echo -e "检测到新版本[ ${sh_new_ver} ]，当前版本[ ${sh_ver} ]"
-        echo -e "是否更新？[Y/n]"
-        read -e -p "(默认: y):" yn
-        [[ -z "${yn}" ]] && yn="y"
+        yn="y"
+        echo -e "自动确认更新"
         if [[ ${yn} == [Yy] ]]; then
             wget -N --no-check-certificate ${DOWNLOAD_URL} -O Nftato.sh.new
             if [ $? -eq 0 ]; then
@@ -2641,95 +2640,95 @@ if [[ ! -z $action ]]; then
 fi
 
 if [ $is_automated -eq 1 ]; then
-  # 在自动模式下，跳过菜单直接退出
-  exit 0
+    # 在自动模式下，跳过菜单直接退出
+    exit 0
 else
-  # 只在非自动模式下显示菜单
-  show_main_menu
-  read -e -p " 请输入数字 [0-25]:" num
-  # ... 现有代码 ...
-case "$num" in
-0)
-    view_all_disable_out
-    ;;
-1)
-    disable_btpt
-    ;;
-2)
-    disable_spam
-    ;;
-3)
-    disable_all_out
-    ;;
-4)
-    disable_want_port_out
-    ;;
-5)
-    disable_want_keyworld_out
-    ;;
-6)
-    able_btpt
-    ;;
-7)
-    able_spam
-    ;;
-8)
-    able_all_out
-    ;;
-9)
-    able_want_port_out
-    ;;
-10)
-    able_want_keyworld_out
-    ;;
-11)
-    able_all_keyworld_out
-    ;;
-12)
-    diable_blocklist_out
-    ;;
-13)
-    display_in_port
-    ;;
-14)
-    display_in_ip
-    ;;
-15)
-    able_want_port_in
-    ;;
-16)
-    disable_want_port_in
-    ;;
-17)
-    able_in_ips
-    ;;
-18)
-    disable_want_ip_in
-    ;;
-19)
-    display_ssh
-    ;;
-20)
-    clear_rebuild_ipta
-    ;;
-21)
-    Update_Shell
-    ;;
-22)
-    setup_ddos_protection
-    ;;
-23)
-    setup_custom_port_protection
-    ;;
-24)
-    manage_ip_lists
-    ;;
-25)
-    view_defense_status
-    ;;
-*)
-    echo "请输入正确数字 [0-25]"
-    ;;
-esac
+    # 只在非自动模式下显示菜单
+    show_main_menu
+    read -e -p " 请输入数字 [0-25]:" num
+    # ... 现有代码 ...
+    case "$num" in
+    0)
+        view_all_disable_out
+        ;;
+    1)
+        disable_btpt
+        ;;
+    2)
+        disable_spam
+        ;;
+    3)
+        disable_all_out
+        ;;
+    4)
+        disable_want_port_out
+        ;;
+    5)
+        disable_want_keyworld_out
+        ;;
+    6)
+        able_btpt
+        ;;
+    7)
+        able_spam
+        ;;
+    8)
+        able_all_out
+        ;;
+    9)
+        able_want_port_out
+        ;;
+    10)
+        able_want_keyworld_out
+        ;;
+    11)
+        able_all_keyworld_out
+        ;;
+    12)
+        diable_blocklist_out
+        ;;
+    13)
+        display_in_port
+        ;;
+    14)
+        display_in_ip
+        ;;
+    15)
+        able_want_port_in
+        ;;
+    16)
+        disable_want_port_in
+        ;;
+    17)
+        able_in_ips
+        ;;
+    18)
+        disable_want_ip_in
+        ;;
+    19)
+        display_ssh
+        ;;
+    20)
+        clear_rebuild_ipta
+        ;;
+    21)
+        Update_Shell
+        ;;
+    22)
+        setup_ddos_protection
+        ;;
+    23)
+        setup_custom_port_protection
+        ;;
+    24)
+        manage_ip_lists
+        ;;
+    25)
+        view_defense_status
+        ;;
+    *)
+        echo "请输入正确数字 [0-25]"
+        ;;
+    esac
 
 fi
