@@ -1919,7 +1919,7 @@ view_defense_status() {
         # 提取HTTP(80)配置
         http_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
         http_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
-        http_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep -o "timeout [0-9]*h[0-9]*m" | head -1 | awk '{print $2}')
+        http_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep -o "timeout [0-9]*h\([0-9]*m\)*" | head -1 | awk '{print $2}')
         http_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "ct count" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
         
         [[ -z "$http_conn_limit" ]] && http_conn_limit="未设置"
@@ -1929,7 +1929,7 @@ view_defense_status() {
         # 提取HTTPS(443)配置
         https_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
         https_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
-        https_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep -o "timeout [0-9]*h[0-9]*m" | head -1 | awk '{print $2}')
+        https_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep -o "timeout [0-9]*h\([0-9]*m\)*" | head -1 | awk '{print $2}')
         https_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "ct count" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
         
         [[ -z "$https_conn_limit" ]] && https_conn_limit="未设置"
@@ -1944,7 +1944,7 @@ view_defense_status() {
                 # 提取端口配置
                 port_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
                 port_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
-                port_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep -o "timeout [0-9]*h[0-9]*m" | head -1 | awk '{print $2}')
+                port_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep -o "timeout [0-9]*h\([0-9]*m\)*" | head -1 | awk '{print $2}')
                 port_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "ct count" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
                 
                 [[ -z "$port_conn_limit" ]] && port_conn_limit="未设置"
