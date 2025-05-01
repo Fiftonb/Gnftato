@@ -4697,6 +4697,24 @@ export default {
 
                             // 强制更新组件
                             this.$forceUpdate();
+                            
+                            // 添加额外的UI强制刷新
+                            // 先延迟执行，确保数据已加载
+                            setTimeout(() => {
+                                // 如果正在显示入网控制标签页，确保数据正确显示
+                                if (this.activeTab === 'inbound' && this.isServerOnline && this.scriptExists) {
+                                    // 添加对SSH端口状态的刷新
+                                    this.refreshSSHPort();
+                                    // 尝试重新获取最新数据
+                                    this.refreshInboundPorts();
+                                    this.refreshInboundIPs();
+                                    
+                                    // 再次强制更新，确保SSH端口状态显示
+                                    setTimeout(() => {
+                                        this.$forceUpdate();
+                                    }, 300);
+                                }
+                            }, 800);
                         }, 1500);
                     }, 1000);
                 } else {

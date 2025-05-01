@@ -350,7 +350,8 @@
           <div class="form-group">
             <label>有效期(天)</label>
             <div class="input-with-tip">
-              <el-input-number v-model="ipDuration" :min="0" :max="365" :step="1" class="full-width" controls-position="right"></el-input-number>
+              <el-input-number v-model="ipDuration" :min="0" :max="365" :step="1" class="full-width"
+                controls-position="right"></el-input-number>
               <div class="form-tip">0表示永久</div>
             </div>
           </div>
@@ -368,7 +369,8 @@
           <div class="form-group">
             <label>有效期(小时)</label>
             <div class="input-with-tip">
-              <el-input-number v-model="ipDuration" :min="0" :max="720" :step="1" class="full-width" controls-position="right"></el-input-number>
+              <el-input-number v-model="ipDuration" :min="0" :max="720" :step="1" class="full-width"
+                controls-position="right"></el-input-number>
               <div class="form-tip">0表示永久</div>
             </div>
           </div>
@@ -428,6 +430,75 @@ export default RulesScript;
 </script>
 
 <style>
+.deploy-terminal {
+  margin: 20px 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #dcdfe6;
+  background-color: #1e1e1e;
+  color: #f0f0f0;
+}
+
+.terminal-header {
+  background-color: #2c2c2c;
+  padding: 8px 12px;
+  justify-content: space-between;
+  border-bottom: 1px solid #3e3e3e;
+}
+
+.terminal-body {
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+}
+
+.log-line {
+  margin: 2px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-line pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: 'Courier New', monospace;
+}
+
+.error-line {
+  color: #f56c6c;
+}
+
+.success-line {
+  color: #67c23a;
+}
+
+.terminal-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  background-color: #f0f0f0;
+  animation: blink 1s infinite;
+  vertical-align: middle;
+}
+
+@keyframes blink {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+.terminal-footer {
+  padding: 10px;
+  background-color: #2c2c2c;
+  border-top: 1px solid #3e3e3e;
+}
+
 .rules-container {
   padding: 20px;
 }
@@ -640,12 +711,13 @@ export default RulesScript;
 
 /* 移动端适配样式 */
 @media screen and (max-width: 768px) {
+
   /* 移动端对话框样式优化 */
   .mobile-tab-nav {
     flex-wrap: wrap;
     justify-content: space-between;
   }
-  
+
   .mobile-tab-nav .ip-tab-item {
     flex: 1;
     min-width: 45%;
@@ -658,17 +730,17 @@ export default RulesScript;
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .form-tip {
     margin-left: 0;
     margin-top: 5px;
   }
-  
+
   .action-button {
     height: 40px;
     font-size: 15px;
   }
-  
+
   .form-group {
     margin-bottom: 15px;
   }
