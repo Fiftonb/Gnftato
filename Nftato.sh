@@ -4,10 +4,10 @@ export PATH
 #=================================================
 #       System Required: CentOS/Debian/Ubuntu
 #       Description: nftables 出封禁 入放行
-#       Version: 2.0.0
+#       Version: 2.0.2
 #=================================================
 
-sh_ver="2.0.0"
+sh_ver="2.0.2"
 Green_font_prefix="\033[32m"
 Red_font_prefix="\033[31m"
 Green_background_prefix="\033[42;37m"
@@ -1530,14 +1530,14 @@ setup_ddos_protection() {
     # 添加HTTP防御规则
     nft add rule ip edge_dft_v4 input tcp dport http ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnections_100000ZZ\"
     nft add rule ip edge_dft_v4 input tcp dport http meter meter-ip-80-max-connections size 65535 { ip saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 22h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 22h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
 
     # 添加HTTPS防御规则
     nft add rule ip edge_dft_v4 input tcp dport https ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnections_100000ZZ\"
     nft add rule ip edge_dft_v4 input tcp dport https meter meter-ip-443-max-connections size 65535 { ip saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 22h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 22h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
 
     # 配置IPv6防御规则
     setup_ipv6_ddos_protection
@@ -1568,14 +1568,14 @@ setup_ipv6_ddos_protection() {
     # 添加HTTP防御规则
     nft add rule ip6 edge_dft_v6 input tcp dport http ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnections_100000ZZ\"
     nft add rule ip6 edge_dft_v6 input tcp dport http meter meter-ip6-80-max-connections size 65535 { ip6 saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 22h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 22h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
 
     # 添加HTTPS防御规则
     nft add rule ip6 edge_dft_v6 input tcp dport https ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnections_100000ZZ\"
     nft add rule ip6 edge_dft_v6 input tcp dport https meter meter-ip6-443-max-connections size 65535 { ip6 saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 22h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 22h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
 }
 
 # 自定义端口DDoS防御
@@ -1604,7 +1604,7 @@ setup_custom_port_protection() {
     [[ -z "${MAX_RATE_SEC}" ]] && MAX_RATE_SEC=300
 
     echo -e "请输入违规IP封禁时长(小时)"
-    read -e -p "(默认: 22小时):" BAN_HOURS
+    read -e -p "(默认: 24小时):" BAN_HOURS
     [[ -z "${BAN_HOURS}" ]] && BAN_HOURS=24
 
     # 检查IPv4表是否存在
@@ -1616,7 +1616,7 @@ setup_custom_port_protection() {
     # 计算超时时间
     BAN_TIMEOUT="${BAN_HOURS}h"
     if [ "$BAN_HOURS" -eq "24" ]; then
-        BAN_TIMEOUT="23h30m" # 稍微短一点以避免边界情况
+        BAN_TIMEOUT="23h59m" # 稍微短一点以避免边界情况
     fi
 
     # 添加IPv4规则
@@ -2239,7 +2239,7 @@ non_interactive_custom_port_protection() {
     [[ -z "${MAX_CONN}" ]] && MAX_CONN=400
     [[ -z "${MAX_RATE_MIN}" ]] && MAX_RATE_MIN=400
     [[ -z "${MAX_RATE_SEC}" ]] && MAX_RATE_SEC=300
-    [[ -z "${BAN_HOURS}" ]] && BAN_HOURS=22
+    [[ -z "${BAN_HOURS}" ]] && BAN_HOURS=24
 
     # 检查IPv4表是否存在
     if ! nft list tables | grep -q "edge_dft_v4"; then
@@ -2250,7 +2250,7 @@ non_interactive_custom_port_protection() {
     # 计算超时时间
     BAN_TIMEOUT="${BAN_HOURS}h"
     if [ "$BAN_HOURS" -eq "24" ]; then
-        BAN_TIMEOUT="23h30m" # 稍微短一点以避免边界情况
+        BAN_TIMEOUT="23h59m" # 稍微短一点以避免边界情况
     fi
 
     # 添加IPv4规则
