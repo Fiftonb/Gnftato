@@ -54,6 +54,7 @@
 git clone https://github.com/Fiftonb/Gnftato.git
 cd Gnftato
 ```
+Clawcloud Run云平台部署教程=>[点击查看](https://github.com/Fiftonb/Gnftato/blob/main/Clawcloud.md)
 
 Docker部署教程=>[点击查看](https://github.com/Fiftonb/Gnftato/blob/main/Dockerdo.md)
 
