@@ -25,7 +25,7 @@
 
     <!-- 空状态显示 -->
     <div v-if="servers.length === 0 && !loading" class="empty-state">
-      <el-empty description="暂无服务器" :image-size="200">
+      <el-empty description="暂无服务器" :image-size="isMobile ? 120 : 200">
         <el-button type="primary" @click="showAddServerDialog">添加您的第一台服务器</el-button>
       </el-empty>
     </div>
@@ -36,6 +36,8 @@
       :data="servers"
       border
       style="width: 100%"
+      :class="{'mobile-table': isMobile}"
+      v-show="!isMobile"
     >
       <el-table-column
         prop="name"
@@ -155,6 +157,95 @@
         </template>
       </el-table-column>
     </el-table>
+    
+    <!-- 移动端卡片式布局 -->
+    <div v-if="isMobile && !loading && servers.length > 0" class="mobile-server-cards">
+      <el-card v-for="server in servers" :key="server._id" class="mobile-server-card" shadow="hover">
+        <div slot="header" class="mobile-card-header">
+          <span class="server-name">{{ server.name }}</span>
+          <el-tag :type="getStatusTagType(server.status)" size="small">
+            {{ statusText[server.status] }}
+          </el-tag>
+          <el-button 
+            type="text" 
+            icon="el-icon-refresh" 
+            circle 
+            size="mini" 
+            @click="checkServerStatus(server)"
+            :loading="checkingServers[server._id]"
+            class="refresh-button"
+          ></el-button>
+        </div>
+        
+        <div class="server-info">
+          <p><strong>主机地址:</strong> {{ server.host }}</p>
+          <p><strong>SSH端口:</strong> {{ server.port }}</p>
+          <p><strong>用户名:</strong> {{ server.username }}</p>
+          <p v-if="server.lastChecked" class="status-time">
+            <strong>上次检查:</strong> {{ formatTime(server.lastChecked) }}
+          </p>
+          
+          <!-- 错误提示 -->
+          <div v-if="errorReasons[server._id]" class="mobile-error-reason">
+            <i class="el-icon-warning" style="color: #E6A23C;"></i> {{ errorReasons[server._id] }}
+          </div>
+        </div>
+        
+        <div class="mobile-operation-buttons">
+          <el-button
+            size="mini"
+            @click="handleEdit(server)"
+            icon="el-icon-edit"
+            circle
+          ></el-button>
+          
+          <el-button
+            v-if="server.status !== 'online' && server.status !== 'connecting' && server.status !== 'disconnecting'"
+            size="mini"
+            type="success"
+            @click="handleConnect(server)"
+            :loading="connectingServers[server._id]"
+            icon="el-icon-connection"
+            circle
+          ></el-button>
+          
+          <el-button
+            v-else-if="server.status === 'online'"
+            size="mini"
+            type="warning"
+            @click="handleDisconnect(server)"
+            :loading="disconnectingServers[server._id]"
+            icon="el-icon-close"
+            circle
+          ></el-button>
+          
+          <el-button
+            v-else
+            size="mini"
+            disabled
+            circle
+            icon="el-icon-loading"
+          ></el-button>
+          
+          <el-button
+            v-if="server.status === 'online'"
+            size="mini"
+            type="primary"
+            @click="handleManageRules(server)"
+            icon="el-icon-setting"
+            circle
+          ></el-button>
+          
+          <el-button
+            size="mini"
+            type="danger"
+            @click="handleDelete(server)"
+            icon="el-icon-delete"
+            circle
+          ></el-button>
+        </div>
+      </el-card>
+    </div>
 
     <!-- 批量操作工具栏 -->
     <div v-if="servers.length > 0" class="batch-actions">
@@ -162,10 +253,38 @@
         <div slot="header" class="clearfix">
           <span><i class="el-icon-s-operation"></i> 批量操作</span>
         </div>
-        <div class="batch-buttons">
-          <el-button size="small" type="success" @click="batchConnect" :disabled="!hasOfflineServers" icon="el-icon-connection">批量连接 <span v-if="hasOfflineServers" class="count-badge">({{ getOfflineCount() }})</span></el-button>
-          <el-button size="small" type="warning" @click="batchDisconnect" :disabled="!hasOnlineServers" icon="el-icon-close">批量断开 <span v-if="hasOnlineServers" class="count-badge">({{ getOnlineCount() }})</span></el-button>
-          <el-button size="small" type="info" @click="checkAllServersStatus" icon="el-icon-refresh">刷新所有状态</el-button>
+        <div class="batch-buttons" :class="{'mobile-batch-buttons': isMobile}">
+          <el-button 
+            size="small" 
+            type="success" 
+            @click="batchConnect" 
+            :disabled="!hasOfflineServers" 
+            icon="el-icon-connection"
+            class="batch-button"
+          >
+            <span class="button-text">批量连接</span>
+            <span v-if="hasOfflineServers" class="count-badge">({{ getOfflineCount() }})</span>
+          </el-button>
+          <el-button 
+            size="small" 
+            type="warning" 
+            @click="batchDisconnect" 
+            :disabled="!hasOnlineServers" 
+            icon="el-icon-close"
+            class="batch-button"
+          >
+            <span class="button-text">批量断开</span>
+            <span v-if="hasOnlineServers" class="count-badge">({{ getOnlineCount() }})</span>
+          </el-button>
+          <el-button 
+            size="small" 
+            type="info" 
+            @click="checkAllServersStatus" 
+            icon="el-icon-refresh"
+            class="batch-button"
+          >
+            <span class="button-text">刷新所有状态</span>
+          </el-button>
         </div>
       </el-card>
     </div>
@@ -1832,6 +1951,113 @@ export default {
   margin-top: 5px;
 }
 
+/* 移动端服务器卡片样式 */
+.mobile-server-cards {
+  margin: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.mobile-server-card {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.mobile-card-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.server-name {
+  font-weight: bold;
+  flex: 1;
+}
+
+.server-info {
+  margin: 10px 0;
+}
+
+.server-info p {
+  margin: 5px 0;
+  line-height: 1.5;
+}
+
+.mobile-operation-buttons {
+  display: flex;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 15px;
+  padding-top: 10px;
+  border-top: 1px solid #ebeef5;
+}
+
+.mobile-error-reason {
+  margin: 10px 0;
+  padding: 8px;
+  background-color: #fef0f0;
+  border-radius: 4px;
+  color: #f56c6c;
+  font-size: 12px;
+}
+
+/* 批量操作样式 */
+.batch-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.batch-button {
+  display: flex;
+  align-items: center;
+}
+
+.count-badge {
+  font-size: 12px;
+  margin-left: 5px;
+  background-color: rgba(255, 255, 255, 0.2);
+  padding: 2px 6px;
+  border-radius: 10px;
+  display: inline-block;
+}
+
+/* 移动端批量操作样式 */
+.mobile-batch-buttons {
+  flex-direction: column;
+  gap: 0;
+}
+
+.mobile-batch-buttons .el-button {
+  margin-bottom: 10px !important;
+  margin-left: 0 !important;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 12px 15px;
+  border-radius: 4px;
+  height: auto;
+  line-height: 1.5;
+}
+
+.mobile-batch-buttons .el-button:last-child {
+  margin-bottom: 0 !important;
+}
+
+.mobile-batch-buttons .button-text {
+  flex: 1;
+  text-align: center;
+  font-size: 14px;
+}
+
+.mobile-batch-buttons .el-button [class^="el-icon-"] {
+  margin-right: 10px;
+  font-size: 16px;
+}
+
 /* 移动端适配样式 */
 @media screen and (max-width: 768px) {
   .servers-container {
@@ -1848,14 +2074,14 @@ export default {
     margin-bottom: 10px;
   }
   
-  .batch-buttons {
-    flex-direction: column;
-    gap: 5px;
-  }
-  
   .operation-buttons {
     flex-direction: column;
     width: 100%;
+  }
+  
+  .batch-actions {
+    margin-top: 15px;
+    margin-bottom: 15px;
   }
   
   /* 弹窗内部样式优化 */
@@ -1876,6 +2102,27 @@ export default {
   :deep(.server-dialog .el-button) {
     width: 100%;
     margin-left: 0 !important;
+    margin-top: 5px;
+  }
+}
+
+/* 极小屏幕优化 */
+@media screen and (max-width: 375px) {
+  .mobile-operation-buttons {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  
+  .mobile-operation-buttons .el-button {
+    margin: 4px;
+  }
+  
+  .mobile-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .mobile-card-header .el-tag {
     margin-top: 5px;
   }
 }
