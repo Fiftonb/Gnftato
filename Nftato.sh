@@ -1530,14 +1530,14 @@ setup_ddos_protection() {
     # 添加HTTP防御规则
     nft add rule ip edge_dft_v4 input tcp dport http ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnections_100000ZZ\"
     nft add rule ip edge_dft_v4 input tcp dport http meter meter-ip-80-max-connections size 65535 { ip saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 22h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 22h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
 
     # 添加HTTPS防御规则
     nft add rule ip edge_dft_v4 input tcp dport https ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnections_100000ZZ\"
     nft add rule ip edge_dft_v4 input tcp dport https meter meter-ip-443-max-connections size 65535 { ip saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 22h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 22h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
 
     # 配置IPv6防御规则
     setup_ipv6_ddos_protection
@@ -1568,14 +1568,14 @@ setup_ipv6_ddos_protection() {
     # 添加HTTP防御规则
     nft add rule ip6 edge_dft_v6 input tcp dport http ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnections_100000ZZ\"
     nft add rule ip6 edge_dft_v6 input tcp dport http meter meter-ip6-80-max-connections size 65535 { ip6 saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 22h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 22h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
 
     # 添加HTTPS防御规则
     nft add rule ip6 edge_dft_v6 input tcp dport https ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnections_100000ZZ\"
     nft add rule ip6 edge_dft_v6 input tcp dport https meter meter-ip6-443-max-connections size 65535 { ip6 saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 22h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 22h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
 }
 
 # 自定义端口DDoS防御
@@ -1604,7 +1604,7 @@ setup_custom_port_protection() {
     [[ -z "${MAX_RATE_SEC}" ]] && MAX_RATE_SEC=300
 
     echo -e "请输入违规IP封禁时长(小时)"
-    read -e -p "(默认: 24小时):" BAN_HOURS
+    read -e -p "(默认: 22小时):" BAN_HOURS
     [[ -z "${BAN_HOURS}" ]] && BAN_HOURS=24
 
     # 检查IPv4表是否存在
@@ -1735,7 +1735,7 @@ add_to_blacklist() {
 
     # 设置超时时间（小时）
     echo -e "请输入黑名单有效期(小时，0表示永久)"
-    read -e -p "(默认: 24):" HOURS
+    read -e -p "(默认: 22):" HOURS
     [[ -z "${HOURS}" ]] && HOURS=24
 
     # 判断IPv4或IPv6
@@ -1965,27 +1965,31 @@ view_defense_status() {
 
         # 显示端口详细配置的简化版本
         echo -e "\n${Yellow_font_prefix}=== 端口保护配置详情 ===${Font_color_suffix}"
-        echo -e "格式说明: [端口号] - [连接限制/分钟] [连接限制/秒] [最大并发连接数] [封禁时长]"
+        echo -e "格式说明: [端口号] - [连接限制/分钟] [连接限制/秒] [每IP最大连接数] [最大并发连接数] [封禁时长]"
 
         # 提取HTTP(80)配置
         http_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
         http_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
-        http_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep -o "timeout [0-9]*h[0-9]*m" | head -1 | awk '{print $2}')
-        http_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "ct count" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
+        http_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep -o "timeout [0-9]*h\([0-9]*m\)*" | head -1 | awk '{print $2}')
+        http_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "maxConnectionsPerIP" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
+        http_total_conn=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "maxConnections" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
 
         [[ -z "$http_conn_limit" ]] && http_conn_limit="未设置"
+        [[ -z "$http_total_conn" ]] && http_total_conn="未设置"
 
-        echo -e "80(HTTP) - ${http_minute_limit:-未设置}/分钟 ${http_second_limit:-未设置}/秒 ${http_conn_limit} ${http_ban_time:-未设置} (已阻止: ${http_drop:-0})"
+        echo -e "80(HTTP) - ${http_minute_limit:-未设置}/分钟 ${http_second_limit:-未设置}/秒 ${http_conn_limit} ${http_total_conn} ${http_ban_time:-未设置} (已阻止: ${http_drop:-0})"
 
         # 提取HTTPS(443)配置
         https_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
         https_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
-        https_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep -o "timeout [0-9]*h[0-9]*m" | head -1 | awk '{print $2}')
-        https_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "ct count" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
+        https_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep -o "timeout [0-9]*h\([0-9]*m\)*" | head -1 | awk '{print $2}')
+        https_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "maxConnectionsPerIP" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
+        https_total_conn=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "maxConnections" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
 
         [[ -z "$https_conn_limit" ]] && https_conn_limit="未设置"
+        [[ -z "$https_total_conn" ]] && https_total_conn="未设置"
 
-        echo -e "443(HTTPS) - ${https_minute_limit:-未设置}/分钟 ${https_second_limit:-未设置}/秒 ${https_conn_limit} ${https_ban_time:-未设置} (已阻止: ${https_drop:-0})"
+        echo -e "443(HTTPS) - ${https_minute_limit:-未设置}/分钟 ${https_second_limit:-未设置}/秒 ${https_conn_limit} ${https_total_conn} ${https_ban_time:-未设置} (已阻止: ${https_drop:-0})"
 
         # 显示自定义端口配置
         if [[ -n "$custom_ports" ]]; then
@@ -1995,10 +1999,12 @@ view_defense_status() {
                 # 提取端口配置
                 port_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
                 port_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
-                port_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep -o "timeout [0-9]*h[0-9]*m" | head -1 | awk '{print $2}')
-                port_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "ct count" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
+                port_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep -o "timeout [0-9]*h\([0-9]*m\)*" | head -1 | awk '{print $2}')
+                port_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "maxConnectionsPerIP" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
+                port_total_conn=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "maxConnections" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
 
                 [[ -z "$port_conn_limit" ]] && port_conn_limit="未设置"
+                [[ -z "$port_total_conn" ]] && port_total_conn="未设置"
 
                 # 检查该端口是否还有UDP保护
                 udp_protection=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "udp dport $port" | wc -l)
@@ -2008,7 +2014,7 @@ view_defense_status() {
                     protocol="TCP"
                 fi
 
-                echo -e "${port}(${protocol}) - ${port_minute_limit:-未设置}/分钟 ${port_second_limit:-未设置}/秒 ${port_conn_limit} ${port_ban_time:-未设置} (已阻止: ${port_drop:-0})"
+                echo -e "${port}(${protocol}) - ${port_minute_limit:-未设置}/分钟 ${port_second_limit:-未设置}/秒 ${port_conn_limit} ${port_total_conn} ${port_ban_time:-未设置} (已阻止: ${port_drop:-0})"
             done
         fi
 
@@ -2221,7 +2227,7 @@ non_interactive_custom_port_protection() {
     if [[ -z "${PORT}" ]]; then
         echo "错误: 未指定端口"
         echo "用法: $0 23 <端口> [协议类型] [每IP最大连接数] [每分钟最大连接] [每秒最大连接] [封禁时长]"
-        echo "例如: $0 23 8080 1 400 400 300 24"
+        echo "例如: $0 23 8080 1 400 400 300 22"
         echo "协议类型: 1=TCP, 2=UDP, 3=TCP+UDP，默认为1(TCP)"
         exit 1
     fi
@@ -2231,7 +2237,7 @@ non_interactive_custom_port_protection() {
     [[ -z "${MAX_CONN}" ]] && MAX_CONN=400
     [[ -z "${MAX_RATE_MIN}" ]] && MAX_RATE_MIN=400
     [[ -z "${MAX_RATE_SEC}" ]] && MAX_RATE_SEC=300
-    [[ -z "${BAN_HOURS}" ]] && BAN_HOURS=24
+    [[ -z "${BAN_HOURS}" ]] && BAN_HOURS=22
 
     # 检查IPv4表是否存在
     if ! nft list tables | grep -q "edge_dft_v4"; then
