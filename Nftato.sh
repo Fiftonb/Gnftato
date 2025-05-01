@@ -1958,7 +1958,9 @@ view_defense_status() {
         echo -e "标准端口: 80(HTTP), 443(HTTPS)"
 
         if [[ -n "$custom_ports" ]]; then
-            echo -e "自定义端口: $custom_ports"
+            # 将多行端口号转换为单行，用逗号分隔
+            formatted_ports=$(echo "$custom_ports" | tr '\n' ',' | sed 's/,$//')
+            echo -e "自定义端口: $formatted_ports"
         else
             echo -e "自定义端口: 无"
         fi
@@ -1970,7 +1972,7 @@ view_defense_status() {
         # 提取HTTP(80)配置
         http_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
         http_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
-        http_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep -o "timeout [0-9]*h\([0-9]*m\)*" | head -1 | awk '{print $2}')
+        http_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep -E "timeout ([0-9]+[dhm])+" | head -1 | awk '{for(i=1;i<=NF;i++) if($i ~ /timeout/) print $(i+1)}')
         http_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "maxConnectionsPerIP" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
         http_total_conn=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 80" | grep "maxConnections" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
 
@@ -1982,7 +1984,7 @@ view_defense_status() {
         # 提取HTTPS(443)配置
         https_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
         https_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
-        https_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep -o "timeout [0-9]*h\([0-9]*m\)*" | head -1 | awk '{print $2}')
+        https_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep -E "timeout ([0-9]+[dhm])+" | head -1 | awk '{for(i=1;i<=NF;i++) if($i ~ /timeout/) print $(i+1)}')
         https_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "maxConnectionsPerIP" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
         https_total_conn=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport 443" | grep "maxConnections" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
 
@@ -1999,7 +2001,7 @@ view_defense_status() {
                 # 提取端口配置
                 port_minute_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "minute" | grep -o "over [0-9]*/minute" | head -1 | awk '{print $2}' | cut -d '/' -f1)
                 port_second_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "second" | grep -o "over [0-9]*/second" | head -1 | awk '{print $2}' | cut -d '/' -f1)
-                port_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep -o "timeout [0-9]*h\([0-9]*m\)*" | head -1 | awk '{print $2}')
+                port_ban_time=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep -E "timeout ([0-9]+[dhm])+" | head -1 | awk '{for(i=1;i<=NF;i++) if($i ~ /timeout/) print $(i+1)}')
                 port_conn_limit=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "maxConnectionsPerIP" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
                 port_total_conn=$(nft list chain ip edge_dft_v4 input 2>/dev/null | grep "tcp dport $port" | grep "maxConnections" | grep -o "over [0-9]*" | head -1 | awk '{print $2}')
 
