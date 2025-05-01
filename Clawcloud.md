@@ -10,15 +10,13 @@
 
 1. 注册完成后，进入控制台
    
-   ![控制台首页](deployimg/001.png)
-
 2. 在控制台中选择并点击 **App Launchpad**
    
-   ![App Launchpad入口](deployimg/002.png)
+   ![App Launchpad入口](deployimg/001.png)
 
 3. 点击 **Create App** 按钮创建新应用
    
-   ![创建应用界面](deployimg/003.png)
+   ![创建应用界面](deployimg/002.png)
 
 4. 在创建应用页面填写以下信息：
    - **Application Name**：填写 `gnftato`
