@@ -174,7 +174,8 @@
     <el-dialog
       :title="isEdit ? '编辑服务器' : '添加服务器'"
       :visible.sync="dialogVisible"
-      width="50%"
+      :width="isMobile ? '90%' : '50%'"
+      class="server-dialog"
     >
       <server-form
         :is-edit="isEdit"
@@ -182,7 +183,7 @@
         @submit="handleFormSubmit"
         ref="serverForm"
       ></server-form>
-      <div slot="footer" class="dialog-footer">
+      <div slot="footer" class="dialog-footer" :class="{'mobile-footer': isMobile}">
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button v-if="!isEdit" type="primary" @click="handleTestConnection" :loading="testingConnection">测试连接</el-button>
         <el-button type="primary" @click="$refs.serverForm.submitForm()">确定</el-button>
@@ -226,7 +227,8 @@ export default {
       sessionId: '', // 用于检测面板服务器重启
       isServerRestarted: false, // 标记面板是否重启过
       isRetrying: false, // 防止重复触发
-      testingConnection: false // 添加测试连接加载状态
+      testingConnection: false, // 添加测试连接加载状态
+      isMobile: false // 添加移动端判断
     };
   },
   computed: {
@@ -260,6 +262,11 @@ export default {
       // 添加自动修复，修正服务器状态不一致问题
       this.autoFixInconsistentStatus();
     }, 1000);
+    
+    // 检测是否为移动设备
+    this.checkMobileDevice();
+    // 监听窗口大小变化
+    window.addEventListener('resize', this.checkMobileDevice);
   },
   beforeDestroy() {
     // 组件销毁时清除定时器
@@ -271,6 +278,9 @@ export default {
     Object.keys(this.heartbeatIntervals).forEach(serverId => {
       clearInterval(this.heartbeatIntervals[serverId]);
     });
+    
+    // 移除窗口大小变化监听
+    window.removeEventListener('resize', this.checkMobileDevice);
   },
   methods: {
     ...mapActions('servers', [
@@ -530,23 +540,93 @@ export default {
       // 设置测试连接加载状态
       this.$set(this, 'testingConnection', true);
       
+      // 显示加载提示
+      let loadingMessage = null;
+      let isCancelled = false;
+      
+      // 设置超时处理
+      let timeoutId = null;
+      let updateInterval = null;
+      
       try {
         // 显示加载提示
-        const loadingMessage = this.$message({
+        loadingMessage = this.$message({
           message: '正在测试连接，请稍候...',
           type: 'info',
           duration: 0,
-          showClose: true
+          showClose: true,
+          onClose: () => {
+            // 用户手动关闭消息时，标记为已取消
+            isCancelled = true;
+            loadingMessage = null;
+          }
         });
         
-        await this.testConnection(formData);
+        // 设置超时处理（30秒）
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new Error('连接测试超时，请检查网络或服务器配置'));
+          }, 30000);
+        });
         
-        // 关闭加载提示
-        loadingMessage.close();
-        this.$message.success('连接测试成功');
+        // 每3秒更新一次提示消息，显示不同的等待文本
+        let count = 0;
+        updateInterval = setInterval(() => {
+          if (loadingMessage && !isCancelled) {
+            count++;
+            let message = '';
+            
+            switch (count % 4) {
+              case 0:
+                message = '正在测试连接，请稍候...';
+                break;
+              case 1:
+                message = '正在尝试连接到服务器...';
+                break;
+              case 2:
+                message = '等待服务器响应中...';
+                break;
+              case 3:
+                message = '连接验证中，请耐心等待...';
+                break;
+            }
+            
+            // 更新消息内容
+            loadingMessage.message = message;
+          }
+        }, 3000);
+        
+        // 使用Promise.race在超时和实际操作之间进行竞争
+        await Promise.race([
+          this.testConnection(formData),
+          timeoutPromise
+        ]);
+        
+        // 如果用户已关闭消息，则不再显示成功消息
+        if (!isCancelled) {
+          // 测试成功显示成功消息
+          this.$message.success('连接测试成功');
+        }
       } catch (error) {
-        this.$message.error('连接测试失败: ' + error.message);
+        // 如果用户已关闭消息，则不再显示错误消息
+        if (!isCancelled) {
+          // 测试失败显示错误消息
+          this.$message.error('连接测试失败: ' + error.message);
+        }
       } finally {
+        // 清除所有定时器
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        if (updateInterval) {
+          clearInterval(updateInterval);
+        }
+        
+        // 无论成功或失败，都确保关闭加载提示和重置状态
+        if (loadingMessage) {
+          loadingMessage.close();
+        }
+        
         // 重置测试连接加载状态
         this.$set(this, 'testingConnection', false);
       }
@@ -1672,6 +1752,10 @@ export default {
       
       // 保存修复后的状态
       this.saveStatesToCache();
+    },
+    // 检测是否为移动设备
+    checkMobileDevice() {
+      this.isMobile = window.innerWidth < 768; // 假设小于768px为移动设备
     }
   }
 };
@@ -1730,5 +1814,69 @@ export default {
 .sync-warning {
   margin-top: 5px;
   text-align: center;
+}
+
+/* 对话框底部按钮样式 */
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mobile-footer {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-footer .el-button {
+  margin-left: 0 !important;
+  margin-top: 5px;
+}
+
+/* 移动端适配样式 */
+@media screen and (max-width: 768px) {
+  .servers-container {
+    padding: 10px;
+  }
+  
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .page-header h1 {
+    margin-bottom: 10px;
+  }
+  
+  .batch-buttons {
+    flex-direction: column;
+    gap: 5px;
+  }
+  
+  .operation-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  /* 弹窗内部样式优化 */
+  :deep(.server-dialog .el-dialog__body) {
+    padding: 15px 10px;
+  }
+  
+  :deep(.server-dialog .el-form-item) {
+    margin-bottom: 15px;
+  }
+  
+  :deep(.server-dialog .dialog-footer) {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  :deep(.server-dialog .el-button) {
+    width: 100%;
+    margin-left: 0 !important;
+    margin-top: 5px;
+  }
 }
 </style> 
