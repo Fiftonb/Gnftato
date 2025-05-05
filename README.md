@@ -60,11 +60,6 @@ Docker部署教程=>[点击查看](https://github.com/Fiftonb/Gnftato/blob/main/
 
 本地环境部署教程=>[点击查看](https://github.com/Fiftonb/Gnftato/blob/main/Localdo.md)
 
-## 服务访问
-
-- 前端界面: http://localhost:8080 (开发模式)或 http://localhost:3001 (生产模式)
-- 后端API: http://localhost:3001/api
-
 ## 用户认证
 
 系统采用固定管理员模式，不支持开放注册。系统启动时会自动创建默认管理员账户：
@@ -79,14 +74,14 @@ cd server
 npm run create-admin
 ```
 
-## 使用指南
+## 服务访问
 
-1. 访问前端界面，使用管理员账户登录系统
-2. 登录后进入服务器管理界面
-3. 添加服务器：点击"添加服务器"，填写服务器信息并测试连接
-4. 连接服务器：在服务器列表中点击"连接"按钮
-5. 管理规则：点击"管理规则"进入相应服务器的规则管理页面
-6. 根据需要配置出入网规则
+- 前端界面: http://localhost:8080 (开发模式)或 http://localhost:3001 (生产模式)
+- 后端API: http://localhost:3001/api
+
+## 使用演示
+
+使用演示=>[点击查看](https://github.com/Fiftonb/Gnftato/blob/main/USE.md)
 
 ## 功能说明
 
@@ -112,10 +107,6 @@ npm run create-admin
 - 如果只需简单的访问控制，使用"放行IP"即可
 - 如果需要防御DDoS攻击同时允许特定IP不受限制，应使用白名单功能
 
-### 其他功能说明
-
-(待补充)
-
 ## 安全提示
 
 - 登录系统后请立即修改默认管理员密码
@@ -124,13 +115,10 @@ npm run create-admin
 - 建议使用SSH密钥认证而非密码认证
 - 服务器连接信息（特别是密码和私钥）存储在本地JSON文件中
 
-## 许可证
-
-MIT License
 
 ## 项目参考
 
-本项目基于[GiPtato](https://github.com/Fiftonb/Gnftato)开发，内核脚本从iptables迁移到nftables的升级版本。
+本项目基于[GiPtato](https://github.com/Fiftonb/GiPtato)开发，内核脚本从iptables迁移到nftables的升级版本。
 > 使用nftables替代iptables实现更现代化的防火墙管理。
 
 不使用面板只想使用脚本(完善后的脚本)
@@ -149,6 +137,10 @@ wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato
 * 由于本人能力有限，不能保证所有功能的可用性，如果出现问题请在Issues反馈。
 * 本人不对任何人使用本项目造成的任何后果承担责任。
 * 本人比较多变，因此本项目可能会随想法或思路的变动随性更改项目结构或大规模重构代码，若不能接受请勿使用。
+
+## 许可证
+
+MIT License
 
 
 
