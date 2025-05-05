@@ -4,7 +4,7 @@
 ![login](readme/login.png)
 2. 登录后进入首页
 ![index](readme/index.png)
-3. 登录后进入服务器管理界面
+3. 点击开始管理服务器进入服务器管理界面
 ![servers](readme/servers.png)
 4. 添加服务器：点击"添加服务器"，填写服务器信息并测试连接
 ![addssh](readme/addssh.png)

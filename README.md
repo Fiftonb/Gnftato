@@ -142,5 +142,9 @@ wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato
 
 MIT License
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Fiftonb/Gnftato&type=Date)](https://www.star-history.com/#Fiftonb/Gnftato&Date)
+
 
 
