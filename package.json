@@ -10,12 +10,18 @@
     "dev:client": "cd client && npm run serve",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "build": "cd client && npm run build",
-    "setup": "npm i && cd server && npm i && mkdir -p public && cd ../client && npm i --force",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "setup": "npm run install:all",
+    "test": "node --test server/test/*.test.js",
+    "test:integration": "node server/test/browser-integration.mjs"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^6.3.0"
-  }
-} 
+  },
+  "engines": {
+    "node": ">=24",
+    "npm": ">=11"
+  },
+  "packageManager": "npm@11.17.0"
+}

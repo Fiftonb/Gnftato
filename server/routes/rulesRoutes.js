@@ -1,10 +1,10 @@
 const express = require('express');
 const rulesController = require('../controllers/rulesController');
 const router = express.Router();
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, requireAdmin } = require('../middlewares/authMiddleware');
 
 // 应用认证中间件保护所有路由
-router.use(protect);
+router.use(protect, requireAdmin);
 
 // 规则缓存路由
 router.get('/:serverId/cache', rulesController.getServerRulesCache);

@@ -582,7 +582,7 @@ class NftablesService {
         // 从服务器JSON文件直接读取信息，而不是通过模型查询数据库
         const fs = require('fs');
         const path = require('path');
-        const serversFilePath = path.join(__dirname, '../data/servers.json');
+        const serversFilePath = path.join(require('../config/runtime').getDataDir(), 'servers.json');
         
         console.log(`[详细日志] 读取服务器文件: ${serversFilePath}`);
         

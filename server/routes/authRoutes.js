@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, requireAdmin } = require('../middlewares/authMiddleware');
 
 // 注册新用户
-router.post('/register', authController.register);
+router.post('/register', protect, requireAdmin, authController.register);
 
 // 用户登录
 router.post('/login', authController.login);

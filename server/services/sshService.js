@@ -1,6 +1,10 @@
 const { Client } = require('ssh2');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('node:crypto');
+const { pipeline } = require('node:stream');
+
+const shellQuote = value => "'" + String(value).replaceAll("'", "'\"'\"'") + "'";
 const { exec } = require('child_process');
 const util = require('util');
 const Server = require('../models/Server');
@@ -426,40 +430,37 @@ class SSHService {
    * @returns {Promise<object>} - 上传结果
    */
   async uploadFile(serverId, localPath, remotePath) {
-    try {
-      const conn = this.connections[serverId];
+    const conn = this.connections[serverId];
+    if (!conn) throw new Error('无有效连接，请先连接服务器');
 
-      if (!conn) {
-        throw new Error('无有效连接，请先连接服务器');
-      }
-
-      return new Promise((resolve, reject) => {
-        conn.sftp((err, sftp) => {
-          if (err) {
-            reject(err);
-            return;
+    return new Promise((resolve, reject) => {
+      conn.sftp((error, sftp) => {
+        if (error) return reject(error);
+        let readStream;
+        let writeStream;
+        let settled = false;
+        const finish = error => {
+          if (settled) return;
+          settled = true;
+          if (error) {
+            readStream?.destroy();
+            writeStream?.destroy();
           }
-
-          const readStream = fs.createReadStream(localPath);
-          const writeStream = sftp.createWriteStream(remotePath);
-
-          writeStream.on('close', () => {
-            resolve({
-              success: true,
-              message: '文件上传成功'
-            });
-          });
-
-          writeStream.on('error', (err) => {
-            reject(err);
-          });
-
-          readStream.pipe(writeStream);
-        });
+          try { sftp.end(); } catch (closeError) { error ||= closeError; }
+          if (error) reject(error);
+          else resolve({ success: true, message: '文件上传成功' });
+        };
+        sftp.on('error', finish);
+        try {
+          writeStream = sftp.createWriteStream(remotePath, { mode: 0o600 });
+          readStream = fs.createReadStream(localPath);
+          // pipeline propagates local read failures and remote write failures.
+          pipeline(readStream, writeStream, finish);
+        } catch (error) {
+          finish(error);
+        }
       });
-    } catch (error) {
-      throw error;
-    }
+    });
   }
 
   /**
@@ -708,144 +709,89 @@ class SSHService {
    * @returns {Promise<object>} 部署结果
    */
   async deployIptatoWithLogs(serverId, logCallback = () => { }) {
+    let temporaryPath;
     try {
-      // 发送连接日志
       logCallback('正在连接服务器...', 'log');
-
-      // 获取服务器信息 - 使用正确的Server模型
       const server = await Server.findById(serverId);
-
-      if (!server) {
-        logCallback('找不到服务器信息', 'error');
-        return { success: false, error: '找不到服务器信息' };
-      }
-
-      // 检查服务器状态
-      if (server.status !== 'online') {
-        logCallback('服务器当前离线，无法部署脚本', 'error');
-        return { success: false, error: '服务器当前离线，无法部署脚本' };
-      }
-
-      // 使用已有的连接方法建立SSH连接
-      logCallback('正在建立SSH连接...', 'log');
-      const connection = await this.connect(serverId);
-
-      if (!connection) {
-        logCallback('无法连接到服务器', 'error');
-        return { success: false, error: '无法连接到服务器' };
-      }
-
-      // 连接成功
+      if (!server) throw new Error('找不到服务器信息');
+      if (server.status !== 'online') throw new Error('服务器当前离线，无法部署脚本');
+      if (!this.checkConnection(serverId)) await this.connect(serverId);
+      if (!this.connections[serverId]) throw new Error('无法连接到服务器');
       logCallback('SSH连接成功', 'success');
 
-      // 检查脚本是否已存在
+      const run = async (command, description) => {
+        const result = await this.executeCommand(serverId, command);
+        if (result.code !== 0) throw new Error(`${description}，退出码: ${result.code}`);
+        return result;
+      };
       logCallback('正在检查脚本是否已存在...', 'log');
-      const checkScriptResult = await this.executeCommand(serverId, 'test -f /root/Nftato.sh && echo "exists" || echo "not_found"');
-
-      if (checkScriptResult.stdout.trim() === 'exists') {
-        logCallback('脚本已存在，直接使用现有脚本', 'success');
-
-        // 检查脚本是否可执行
-        const checkExecResult = await this.executeCommand(serverId, 'test -x /root/Nftato.sh && echo "executable" || echo "not_executable"');
-
-        if (checkExecResult.stdout.trim() !== 'executable') {
-          logCallback('脚本存在但不可执行，正在设置执行权限...', 'log');
-          await this.executeCommand(serverId, 'chmod +x /root/Nftato.sh');
-        }
-
+      const existing = await run(
+        'if [ -f /root/Nftato.sh ]; then printf root; elif [ -f "$HOME/Nftato.sh" ]; then printf home; else printf missing; fi',
+        '检查现有脚本失败'
+      );
+      const location = existing.stdout.trim();
+      if (!['root', 'home', 'missing'].includes(location)) throw new Error('无法确定远程脚本状态');
+      let scriptPath = '/root/Nftato.sh';
+      if (location !== 'root') {
+        const homeResult = await run('printf \'%s\\n\' "$HOME"', '读取远程主目录失败');
+        const remoteHome = homeResult.stdout.trim();
+        if (!remoteHome.startsWith('/') || /[\r\n\0]/.test(remoteHome)) throw new Error('远程主目录无效');
+        scriptPath = path.posix.join(remoteHome, 'Nftato.sh');
+      }
+      if (location !== 'missing') {
+        await run(`if [ ! -x ${shellQuote(scriptPath)} ]; then chmod +x -- ${shellQuote(scriptPath)}; fi`, '设置现有脚本执行权限失败');
+        logCallback('脚本已存在，保留现有脚本和防火墙规则', 'success');
         return { success: true, message: '脚本已存在且可执行' };
       }
 
-      // 下载脚本
-      logCallback('开始下载Nftato脚本...', 'log');
+      // Ship the exact reviewed script included in this application release.
+      const localPath = path.resolve(__dirname, '../scripts/Nftato.sh');
+      const expectedHash = crypto.createHash('sha256').update(await fs.promises.readFile(localPath)).digest('hex');
+      temporaryPath = path.posix.join(path.posix.dirname(scriptPath), `.Nftato.sh.${crypto.randomUUID()}.upload`);
+      logCallback('正在通过SFTP上传随应用发布的Nftato脚本...', 'log');
+      await this.uploadFile(serverId, localPath, temporaryPath);
+      logCallback('正在校验上传文件并安装脚本...', 'log');
+      const verifyCommand = `printf '%s  %s\\n' ${shellQuote(expectedHash)} ${shellQuote(temporaryPath)} | sha256sum --check --status`;
+      await run(verifyCommand, '上传脚本SHA-256校验失败');
+      await run(
+        `chmod 700 -- ${shellQuote(temporaryPath)} && mv -- ${shellQuote(temporaryPath)} ${shellQuote(scriptPath)}`,
+        '安装上传脚本失败'
+      );
+      temporaryPath = undefined;
 
-      // 修改部署流程 - 分两部分，先下载准备工作，再流式执行脚本
-      const prepareCommands = [
-        'cd ~',
-        'wget -N --no-check-certificate https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh',
-        'chmod +x Nftato.sh'
-      ];
-
-      // 执行准备命令
-      for (const cmd of prepareCommands) {
-        logCallback(`执行命令: ${cmd}`, 'log');
-
-        const result = await this.executeCommand(serverId, cmd);
-
-        // 记录命令输出
-        if (result.stdout) {
-          const lines = result.stdout.split('\n');
-          lines.forEach(line => {
-            if (line.trim()) {
-              logCallback(line.trim(), 'log');
-            }
-          });
-        }
-
-        if (result.stderr) {
-          const lines = result.stderr.split('\n');
-          lines.forEach(line => {
-            if (line.trim()) {
-              logCallback(line.trim(), 'error');
-            }
-          });
-        }
-
-        if (result.code !== 0) {
-          logCallback(`命令执行失败: ${cmd}`, 'error');
-          return { success: false, error: `部署命令失败: ${cmd}` };
-        }
-      }
-
-      // 使用流式方法执行Nftato.sh脚本
-      logCallback('开始执行Nftato.sh脚本...', 'log');
-      logCallback('这可能需要几分钟时间，请耐心等待...', 'log');
-
-      try {
-        // 添加AUTOMATED环境变量，让脚本知道它是在自动模式下运行
-        // 同时直接执行命令20(清空并重建防火墙规则)，避免脚本卡在菜单等待用户输入
-        const scriptResult = await this.executeCommandWithStream(
-          serverId, 
-          'export AUTOMATED=yes; ./Nftato.sh 20 || echo "Script execution failed"',
-          (line, type) => logCallback(line, type)
-        );
-
-        if (scriptResult.code !== 0) {
-          logCallback(`脚本执行失败，退出码: ${scriptResult.code}`, 'error');
-          return { success: false, error: `脚本执行失败，退出码: ${scriptResult.code}` };
-        }
-      } catch (scriptError) {
-        logCallback(`脚本执行异常: ${scriptError.message}`, 'error');
-        return { success: false, error: `脚本执行异常: ${scriptError.message}` };
-      }
-
-      // 验证部署结果
-      logCallback('正在验证脚本安装结果...', 'log');
-
-      const verifyResult = await this.executeCommand(serverId, 'test -f ~/Nftato.sh && echo "success" || echo "failed"');
-
-      if (verifyResult.stdout.trim() === 'success') {
-        logCallback('Nftato脚本已成功部署！', 'success');
-
-        // 复制到root目录
-        logCallback('正在复制脚本到root目录...', 'log');
-        await this.executeCommand(serverId, 'sudo cp ~/Nftato.sh /root/Nftato.sh 2>/dev/null || echo "无法复制到root目录"');
-
-        // 更新服务器缓存
-        logCallback('正在更新服务器配置...', 'log');
-        const cacheService = require('./cacheService');
-        await cacheService.clearServerRulesCache(serverId);
-
-        logCallback('部署完成', 'success');
-        return { success: true, message: '脚本部署成功' };
-      } else {
-        logCallback('脚本部署验证失败', 'error');
-        return { success: false, error: '脚本部署验证失败' };
-      }
+      logCallback('开始自动初始化Nftato规则，这可能需要几分钟...', 'log');
+      const scriptResult = await this.executeCommandWithStream(
+        serverId,
+        `AUTOMATED=yes bash ${shellQuote(scriptPath)} 20`,
+        (line, type) => logCallback(line, type)
+      );
+      if (scriptResult.code !== 0) throw new Error(`脚本执行失败，退出码: ${scriptResult.code}`);
+      await run(`test -f ${shellQuote(scriptPath)} && test -x ${shellQuote(scriptPath)}`, '脚本部署验证失败');
+      const cacheService = require('./cacheService');
+      await cacheService.clearServerRulesCache(serverId);
+      logCallback('Nftato脚本已成功部署！', 'success');
+      return { success: true, message: '脚本部署成功' };
     } catch (error) {
       logCallback(`部署过程出错: ${error.message}`, 'error');
       return { success: false, error: error.message };
+    } finally {
+      if (temporaryPath) {
+        try {
+          await this.executeCommand(serverId, `rm -f -- ${shellQuote(temporaryPath)}`);
+        } catch {
+          logCallback('未能清理远程上传临时文件', 'error');
+        }
+      }
     }
+  }
+
+  // The REST controller expects object-shaped progress and rejected failures.
+  async deployIptato(serverId, progressCallback = () => {}) {
+    const result = await this.deployIptatoWithLogs(serverId, (message, type = 'log') => {
+      progressCallback({ type, message });
+    });
+    if (!result.success) throw new Error(result.error || '脚本部署失败');
+    return result;
   }
 
   /**
@@ -1014,4 +960,4 @@ class SSHService {
   }
 }
 
-module.exports = new SSHService(); 
+module.exports = new SSHService();

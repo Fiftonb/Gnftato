@@ -1,148 +1,99 @@
-const fs = require('fs');
-const path = require('path');
-const util = require('util');
+const fs = require('node:fs');
+const path = require('node:path');
+const { randomUUID } = require('node:crypto');
+const { getDataDir } = require('../config/runtime');
 
-const readFile = util.promisify(fs.readFile);
-const writeFile = util.promisify(fs.writeFile);
+const RULES_CACHE_PATH = path.join(getDataDir(), 'rules-cache.json');
+const LEGACY_RULES_PATH = path.join(getDataDir(), 'rules.json');
+const forbiddenKeys = new Set(['__proto__', 'constructor', 'prototype']);
+let pendingWrites = Promise.resolve();
 
-const RULES_CACHE_PATH = path.join(__dirname, '../data/rules.json');
+function safeKey(value) {
+  return typeof value === 'string' && value.length > 0 && !forbiddenKeys.has(value);
+}
 
-/**
- * 读取规则缓存数据
- * @returns {Promise<Object>} 规则缓存数据
- */
-const getRulesCache = async () => {
+async function getRulesCache() {
   try {
-    const data = await readFile(RULES_CACHE_PATH, 'utf8');
-    return JSON.parse(data);
+    const source = fs.existsSync(RULES_CACHE_PATH) ? RULES_CACHE_PATH : LEGACY_RULES_PATH;
+    const data = JSON.parse(await fs.promises.readFile(source, 'utf8'));
+    // Legacy rule records used an array; caches use an object keyed by server ID.
+    return data && data.rules && typeof data.rules === 'object' && !Array.isArray(data.rules)
+      ? data : { rules: {} };
   } catch (error) {
-    console.error('读取规则缓存失败:', error);
-    // 如果文件不存在或无法解析，返回默认结构
+    if (error.code !== 'ENOENT') console.error('读取规则缓存失败:', error);
     return { rules: {} };
   }
-};
+}
 
-/**
- * 写入规则缓存数据
- * @param {Object} data - 规则缓存数据
- * @returns {Promise<boolean>} 是否写入成功
- */
-const saveRulesCache = async (data) => {
+async function saveRulesCache(data) {
+  const temporaryPath = `${RULES_CACHE_PATH}.${process.pid}.${randomUUID()}.tmp`;
   try {
-    await writeFile(RULES_CACHE_PATH, JSON.stringify(data, null, 2), 'utf8');
+    await fs.promises.mkdir(path.dirname(RULES_CACHE_PATH), { recursive: true });
+    await fs.promises.writeFile(temporaryPath, JSON.stringify(data, null, 2), {
+      encoding: 'utf8', mode: 0o600, flag: 'wx'
+    });
+    await fs.promises.rename(temporaryPath, RULES_CACHE_PATH);
     return true;
-  } catch (error) {
-    console.error('写入规则缓存失败:', error);
-    return false;
+  } finally {
+    await fs.promises.unlink(temporaryPath).catch(error => {
+      if (error.code !== 'ENOENT') console.error('清理临时缓存文件失败:', error);
+    });
   }
-};
+}
 
-/**
- * 获取服务器规则缓存
- * @param {string} serverId - 服务器ID
- * @returns {Promise<Object|null>} 服务器规则缓存数据
- */
-exports.getServerRulesCache = async (serverId) => {
-  try {
+// The entire read/modify/write operation must be serialized: parallel rule
+// refreshes otherwise read the same snapshot and overwrite each other's fields.
+function updateCache(mutate) {
+  const operation = pendingWrites.then(async () => {
     const cache = await getRulesCache();
-    return cache.rules[serverId] || null;
-  } catch (error) {
-    console.error(`获取服务器 ${serverId} 的规则缓存失败:`, error);
-    return null;
-  }
+    if (mutate(cache) === false) return true;
+    return saveRulesCache(cache);
+  });
+  // A failed write must not prevent subsequent refreshes from being persisted.
+  pendingWrites = operation.catch(() => {});
+  return operation.catch(error => {
+    console.error('更新规则缓存失败:', error);
+    return false;
+  });
+}
+
+exports.getServerRulesCache = async serverId => {
+  if (!safeKey(serverId)) return null;
+  await pendingWrites;
+  const cache = await getRulesCache();
+  return Object.hasOwn(cache.rules, serverId) ? cache.rules[serverId] : null;
 };
 
-/**
- * 保存服务器规则缓存
- * @param {string} serverId - 服务器ID
- * @param {Object} data - 服务器规则数据
- * @returns {Promise<boolean>} 是否保存成功
- */
 exports.saveServerRulesCache = async (serverId, data) => {
-  try {
-    const cache = await getRulesCache();
-    
-    if (!cache.rules) {
-      cache.rules = {};
-    }
-    
-    cache.rules[serverId] = {
-      lastUpdate: new Date().toISOString(),
-      data: data
-    };
-    
-    return await saveRulesCache(cache);
-  } catch (error) {
-    console.error(`保存服务器 ${serverId} 的规则缓存失败:`, error);
-    return false;
-  }
+  if (!safeKey(serverId)) return false;
+  return updateCache(cache => {
+    cache.rules[serverId] = { lastUpdate: new Date().toISOString(), data };
+  });
 };
 
-/**
- * 更新服务器数据缓存项
- * @param {string} serverId - 服务器ID
- * @param {string} key - 数据项键名
- * @param {any} value - 数据项值
- * @returns {Promise<boolean>} 是否更新成功
- */
 exports.updateServerCacheItem = async (serverId, key, value) => {
-  try {
-    const cache = await getRulesCache();
-    
-    if (!cache.rules[serverId]) {
-      cache.rules[serverId] = {
-        lastUpdate: new Date().toISOString(),
-        data: {}
-      };
+  if (!safeKey(serverId) || !safeKey(key)) return false;
+  return updateCache(cache => {
+    if (!Object.hasOwn(cache.rules, serverId) || !cache.rules[serverId] ||
+        typeof cache.rules[serverId] !== 'object') {
+      cache.rules[serverId] = { data: {} };
     }
-    
-    cache.rules[serverId].data[key] = value;
-    cache.rules[serverId].lastUpdate = new Date().toISOString();
-    
-    return await saveRulesCache(cache);
-  } catch (error) {
-    console.error(`更新服务器 ${serverId} 的缓存项 ${key} 失败:`, error);
-    return false;
-  }
+    const entry = cache.rules[serverId];
+    if (!entry.data || typeof entry.data !== 'object' || Array.isArray(entry.data)) entry.data = {};
+    entry.data[key] = value;
+    entry.lastUpdate = new Date().toISOString();
+  });
 };
 
-/**
- * 清除服务器规则缓存
- * @param {string} serverId - 服务器ID
- * @returns {Promise<boolean>} 是否清除成功
- */
-exports.clearServerRulesCache = async (serverId) => {
-  try {
-    const cache = await getRulesCache();
-    
-    if (cache.rules && cache.rules[serverId]) {
-      delete cache.rules[serverId];
-      return await saveRulesCache(cache);
-    }
-    
-    return true;
-  } catch (error) {
-    console.error(`清除服务器 ${serverId} 的规则缓存失败:`, error);
-    return false;
-  }
+exports.clearServerRulesCache = async serverId => {
+  if (!safeKey(serverId)) return false;
+  return updateCache(cache => {
+    if (!Object.hasOwn(cache.rules, serverId)) return false;
+    delete cache.rules[serverId];
+  });
 };
 
-/**
- * 获取服务器缓存最后更新时间
- * @param {string} serverId - 服务器ID
- * @returns {Promise<string|null>} 最后更新时间
- */
-exports.getServerCacheLastUpdate = async (serverId) => {
-  try {
-    const cache = await getRulesCache();
-    
-    if (cache.rules && cache.rules[serverId]) {
-      return cache.rules[serverId].lastUpdate;
-    }
-    
-    return null;
-  } catch (error) {
-    console.error(`获取服务器 ${serverId} 的缓存更新时间失败:`, error);
-    return null;
-  }
-}; 
+exports.getServerCacheLastUpdate = async serverId => {
+  const cache = await exports.getServerRulesCache(serverId);
+  return cache?.lastUpdate || null;
+};

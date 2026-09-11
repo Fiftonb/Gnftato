@@ -107,7 +107,8 @@ exports.updateServer = async (req, res) => {
     
     const server = await Server.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      Object.fromEntries(Object.entries(req.body).filter(([key]) =>
+        ['name', 'host', 'port', 'username', 'authType', 'password', 'privateKey'].includes(key))),
       { new: true }
     );
     
@@ -287,13 +288,13 @@ exports.disconnectServer = async (req, res) => {
  * 在服务器上执行系统命令
  */
 exports.executeCommand = async (req, res) => {
+  const serverId = req.params.id;
   try {
     const { command } = req.body;
-    const serverId = req.params.id;
     
     console.log(`接收到执行命令请求，服务器ID: ${serverId}, 命令: ${command}`);
     
-    if (!command) {
+    if (typeof command !== 'string' || !command.trim()) {
       console.error('命令为空');
       return res.status(400).json({
         success: false,
@@ -432,11 +433,12 @@ exports.checkServerStatus = async (req, res) => {
  * 部署Nftato脚本到服务器
  */
 exports.deployIptato = async (req, res) => {
+  const serverId = req.params.id;
+  let deploymentAcquired = false;
   // 创建一个独立的响应已发送标记，避免重复发送响应
   let responseSent = false;
   
   try {
-    const serverId = req.params.id;
     // 检查服务器是否存在
     const server = await Server.findById(serverId);
     if (!server) {
@@ -454,6 +456,12 @@ exports.deployIptato = async (req, res) => {
       });
     }
 
+    if (req.app.locals.deployingServers.has(serverId)) {
+      return res.status(409).json({ success: false, message: '该服务器已有部署任务正在执行' });
+    }
+    req.app.locals.deployingServers.add(serverId);
+    deploymentAcquired = true;
+
     // 检查是否需要使用WebSocket
     const useWebSocket = req.query.useWebSocket === 'true' || req.body.useWebSocket === true;
     
@@ -470,7 +478,7 @@ exports.deployIptato = async (req, res) => {
       const roomId = `deploy_${serverId}_${Date.now()}`;
       
       // 通知前端WebSocket连接信息
-      req.app.io.emit('deploy_start', { 
+      req.app.io.to(`user:${req.user.id}`).emit('deploy_start', {
         serverId, 
         roomId,
         message: '开始部署过程，请等待...'
@@ -478,14 +486,14 @@ exports.deployIptato = async (req, res) => {
       
       // 创建进度回调函数，通过WebSocket发送进度
       const progressCallback = (data) => {
-        req.app.io.emit(roomId, data);
+        req.app.io.to(`user:${req.user.id}`).emit(roomId, data);
       };
       
       // 开始部署过程
       try {
         await sshService.deployIptato(serverId, progressCallback);
         // 部署完成，发送最终状态
-        req.app.io.emit(roomId, { 
+        req.app.io.to(`user:${req.user.id}`).emit(roomId, {
           type: 'complete',
           success: true,
           message: '脚本部署成功完成！'
@@ -493,7 +501,7 @@ exports.deployIptato = async (req, res) => {
       } catch (deployError) {
         console.error('部署过程中出错:', deployError);
         // 发送错误信息
-        req.app.io.emit(roomId, { 
+        req.app.io.to(`user:${req.user.id}`).emit(roomId, {
           type: 'error',
           success: false,
           message: `部署失败: ${deployError.message}`
@@ -501,7 +509,7 @@ exports.deployIptato = async (req, res) => {
       } finally {
         // 发送关闭信号
         setTimeout(() => {
-          req.app.io.emit(roomId, { type: 'close' });
+          req.app.io.to(`user:${req.user.id}`).emit(roomId, { type: 'close' });
         }, 1000);
       }
     } else {
@@ -536,6 +544,8 @@ exports.deployIptato = async (req, res) => {
         errorDetails: process.env.NODE_ENV === 'production' ? undefined : errorDetails
       });
     }
+  } finally {
+    if (deploymentAcquired) req.app.locals.deployingServers.delete(serverId);
   }
 };
 
@@ -731,4 +741,4 @@ exports.testConnection = async (req, res) => {
       message: '连接测试失败: ' + error.message
     });
   }
-}; 
+};

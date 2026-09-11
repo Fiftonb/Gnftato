@@ -7,7 +7,7 @@
     "start": "node app.js",
     "dev": "nodemon --config nodemon.json app.js",
     "dev:stable": "nodemon --config nodemon.json --ignore '**/*' app.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test test/*.test.js",
     "create-admin": "node scripts/createAdmin.js"
   },
   "author": "",
@@ -16,13 +16,22 @@
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^10.0.0",
-    "express": "^4.17.1",
-    "jsonwebtoken": "^9.0.2",
-    "nodemon": "^2.0.14",
-    "socket.io": "^4.7.2",
+    "express": "^4.22.2",
+    "jsonwebtoken": "^9.0.3",
+    "socket.io": "^4.8.3",
     "ssh2": "^1.5.0",
-    "uuid": "^8.3.2"
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
+    "nodemon": "^3.1.14"
+  },
+  "overrides": {
+    "express": {
+      "qs": "6.16.0"
+    }
+  },
+  "engines": {
+    "node": ">=24",
+    "npm": ">=11"
   }
 }

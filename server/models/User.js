@@ -1,116 +1,74 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 const bcrypt = require('bcryptjs');
+const { getDataDir } = require('../config/runtime');
 
 class User {
   constructor() {
-    // 获取用户数据文件路径
-    let dataDir;
-    if (process.env.DATA_DIR) {
-      if (process.env.DATA_DIR.startsWith('./')) {
-        dataDir = path.join(__dirname, '../..', process.env.DATA_DIR.substring(2));
-      } else {
-        dataDir = path.resolve(process.env.DATA_DIR);
-      }
-    } else {
-      dataDir = path.join(__dirname, '../data');
-    }
-    
+    const dataDir = getDataDir();
+    fs.mkdirSync(dataDir, { recursive: true });
     this.usersFilePath = path.join(dataDir, 'users.json');
-    
-    // 如果用户数据文件不存在，创建一个空的
-    if (!fs.existsSync(this.usersFilePath)) {
-      fs.writeFileSync(this.usersFilePath, JSON.stringify({ users: [] }, null, 2));
-    }
+    if (!fs.existsSync(this.usersFilePath)) this.saveUsers([]);
   }
-
-  // 获取所有用户
   getUsers() {
-    const data = fs.readFileSync(this.usersFilePath, 'utf8');
-    return JSON.parse(data).users;
+    const data = JSON.parse(fs.readFileSync(this.usersFilePath, 'utf8'));
+    if (!Array.isArray(data.users)) throw new Error('用户数据格式错误');
+    return data.users;
   }
-
-  // 保存用户数据
   saveUsers(users) {
-    fs.writeFileSync(this.usersFilePath, JSON.stringify({ users }, null, 2));
+    const temporaryFile = `${this.usersFilePath}.${process.pid}.tmp`;
+    fs.writeFileSync(temporaryFile, JSON.stringify({ users }, null, 2), { mode: 0o600 });
+    fs.renameSync(temporaryFile, this.usersFilePath);
   }
-
-  // 通过用户名查找用户
   findUserByUsername(username) {
-    const users = this.getUsers();
-    return users.find(user => user.username === username);
+    return this.getUsers().find(user => user.username === username);
   }
-
-  // 创建新用户
-  async createUser(username, password) {
-    // 检查用户名是否已存在
-    if (this.findUserByUsername(username)) {
-      throw new Error('用户名已存在');
+  validatePassword(password) {
+    if (typeof password !== 'string' || password.trim().length < 12 || Buffer.byteLength(password, 'utf8') > 72) {
+      throw new Error('新密码至少 12 个字符，且 UTF-8 长度不能超过 72 字节');
     }
-
+  }
+  async createUser(username, password, options = {}) {
+    if (typeof username !== 'string' || !username.trim() || username.length > 100) {
+      throw new Error('用户名不能为空且不能超过 100 个字符');
+    }
+    this.validatePassword(password);
+    const hashedPassword = await bcrypt.hash(password, 10);
+    // Re-read after hashing so concurrent creations cannot overwrite each other.
     const users = this.getUsers();
-    
-    // 加密密码
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-    
-    // 创建新用户
-    const newUser = {
-      id: Date.now().toString(),
-      username,
-      password: hashedPassword,
+    if (users.some(user => user.username === username)) throw new Error('用户名已存在');
+    const user = {
+      id: randomUUID(), username, password: hashedPassword,
+      isAdmin: options.isAdmin === true, tokenVersion: 0,
       createdAt: new Date().toISOString()
     };
-    
-    users.push(newUser);
+    users.push(user);
     this.saveUsers(users);
-    
-    // 返回不含密码的用户信息
-    const { password: _, ...userWithoutPassword } = newUser;
-    return userWithoutPassword;
+    const { password: _, ...safeUser } = user;
+    return safeUser;
   }
-
-  // 验证用户登录
   async validateUser(username, password) {
+    // Existing hashes may predate the new password policy; keep legacy logins working.
+    if (typeof username !== 'string' || typeof password !== 'string') return null;
     const user = this.findUserByUsername(username);
-    
-    if (!user) {
-      return null;
-    }
-    
-    const isMatch = await bcrypt.compare(password, user.password);
-    
-    if (!isMatch) {
-      return null;
-    }
-    
-    // 返回不含密码的用户信息
-    const { password: _, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    if (!user || !await bcrypt.compare(password, user.password)) return null;
+    const { password: _, ...safeUser } = user;
+    return safeUser;
   }
-
-  // 更新用户密码
-  async updatePassword(userId, newPassword) {
+  async updatePassword(userId, newPassword, username) {
+    if (typeof username !== 'string' || !username) throw new Error('用户名不能为空');
+    this.validatePassword(newPassword);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
     const users = this.getUsers();
-    const userIndex = users.findIndex(user => user.id === userId);
-    
-    if (userIndex === -1) {
-      throw new Error('用户不存在');
-    }
-    
-    // 加密新密码
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-    
-    // 更新用户密码
-    users[userIndex].password = hashedPassword;
-    users[userIndex].updatedAt = new Date().toISOString();
-    
-    // 保存更新
+    // Legacy timestamp IDs can collide; the authenticated username disambiguates them.
+    const user = users.find(entry => entry.id === userId && entry.username === username);
+    if (!user) throw new Error('用户不存在');
+    user.password = hashedPassword;
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1;
+    user.updatedAt = new Date().toISOString();
     this.saveUsers(users);
-    
-    return true;
+    return user;
   }
 }
-
-module.exports = new User(); 
+module.exports = new User();

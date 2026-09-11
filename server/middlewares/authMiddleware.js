@@ -1,70 +1,32 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-// JWT密钥
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-
-// 验证令牌是否有效的中间件
-exports.protect = async (req, res, next) => {
+function publicUser(user) {
+  return { id: user.id, username: user.username, isAdmin: user.isAdmin === true, createdAt: user.createdAt };
+}
+function authenticateToken(token) {
+  if (typeof token !== 'string' || !token) throw new Error('请先登录以获取访问权限');
+  const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+  if (!decoded || typeof decoded !== 'object' || typeof decoded.username !== 'string') throw new Error('无效的令牌');
+  const user = User.findUserByUsername(decoded.username);
+  if (!user || decoded.id !== user.id || (decoded.ver ?? 0) !== (user.tokenVersion ?? 0)) {
+    throw new Error('登录已失效，请重新登录');
+  }
+  return publicUser(user);
+}
+function protect(req, res, next) {
+  const match = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '');
   try {
-    let token;
-
-    // 检查Authorization请求头
-    if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith('Bearer')
-    ) {
-      // 获取Bearer令牌
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    // 如果没有令牌，返回错误
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: '请先登录以获取访问权限'
-      });
-    }
-
-    // 验证令牌
-    const decoded = jwt.verify(token, JWT_SECRET);
-
-    // 查找用户
-    const currentUser = User.findUserByUsername(decoded.username);
-
-    if (!currentUser) {
-      return res.status(401).json({
-        success: false,
-        message: '此令牌的用户不存在'
-      });
-    }
-
-    // 将用户信息添加到req对象
-    req.user = {
-      id: currentUser.id,
-      username: currentUser.username
-    };
-
+    req.user = authenticateToken(match && match[1]);
     next();
   } catch (error) {
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        success: false,
-        message: '无效的令牌'
-      });
-    }
-
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: '令牌已过期'
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: '服务器错误',
-      error: error.message
-    });
+    res.status(401).json({ success: false, message: '登录已失效，请重新登录' });
   }
-}; 
+}
+function requireAdmin(req, res, next) {
+  if (!req.user || !req.user.isAdmin) {
+    return res.status(403).json({ success: false, message: '此操作需要管理员权限' });
+  }
+  next();
+}
+module.exports = { protect, requireAdmin, authenticateToken, publicUser };
