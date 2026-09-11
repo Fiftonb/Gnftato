@@ -9,7 +9,7 @@
     "lint": "vue-cli-service lint"
   },
   "dependencies": {
-    "axios": "^0.27.2",
+    "axios": "0.27.2",
     "core-js": "^3.25.0",
     "element-ui": "^2.15.10",
     "socket.io-client": "^4.7.2",
