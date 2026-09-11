@@ -59,23 +59,12 @@
 
     <el-tabs v-model="activeTab" type="card" v-if="scriptExists || !isServerOnline">
       <el-tab-pane label="入网控制" name="inbound">
-        <template v-if="!isServerOnline">
-          <el-alert title="服务器当前处于离线状态" type="warning" description="服务器离线时无法管理防火墙规则，请先连接服务器" show-icon :closable="false"
-            style="margin-bottom: 15px;">
-          </el-alert>
-
-          <div class="server-offline">
-            <el-icon class="el-icon-connection"><Connection /></el-icon>
-            <h3>服务器未连接</h3>
-            <p>当前无法管理防火墙规则，请先连接服务器</p>
-          </div>
-
-          <div class="offline-actions">
-            <el-button type="primary" @click="tryConnectServer" :loading="connecting"
-              :icon="$icons.Refresh">连接服务器</el-button>
-            <el-button @click="$router.push('/servers')" :icon="$icons.Back">返回服务器列表</el-button>
-          </div>
-        </template>
+        <FirewallOfflineState
+          v-if="!isServerOnline"
+          :connecting="connecting"
+          @connect="tryConnectServer"
+          @back="$router.push('/servers')"
+        />
 
         <div v-else>
           <el-card>
@@ -155,23 +144,12 @@
       </el-tab-pane>
 
       <el-tab-pane label="出网控制" name="outbound">
-        <template v-if="!isServerOnline">
-          <el-alert title="服务器当前处于离线状态" type="warning" description="服务器离线时无法管理防火墙规则，请先连接服务器" show-icon :closable="false"
-            style="margin-bottom: 15px;">
-          </el-alert>
-
-          <div class="server-offline">
-            <el-icon class="el-icon-connection"><Connection /></el-icon>
-            <h3>服务器未连接</h3>
-            <p>当前无法管理防火墙规则，请先连接服务器</p>
-          </div>
-
-          <div class="offline-actions">
-            <el-button type="primary" @click="tryConnectServer" :loading="connecting"
-              :icon="$icons.Refresh">连接服务器</el-button>
-            <el-button @click="$router.push('/servers')" :icon="$icons.Back">返回服务器列表</el-button>
-          </div>
-        </template>
+        <FirewallOfflineState
+          v-if="!isServerOnline"
+          :connecting="connecting"
+          @connect="tryConnectServer"
+          @back="$router.push('/servers')"
+        />
 
         <div v-else>
           <el-card>
@@ -233,23 +211,13 @@
       </el-tab-pane>
 
       <el-tab-pane label="DDoS防御" name="ddos">
-        <template v-if="!isServerOnline">
-          <el-alert title="服务器当前处于离线状态" type="warning" description="服务器离线时无法管理DDoS防御，请先连接服务器" show-icon
-            :closable="false" style="margin-bottom: 15px;">
-          </el-alert>
-
-          <div class="server-offline">
-            <el-icon class="el-icon-connection"><Connection /></el-icon>
-            <h3>服务器未连接</h3>
-            <p>当前无法管理DDoS防御，请先连接服务器</p>
-          </div>
-
-          <div class="offline-actions">
-            <el-button type="primary" @click="tryConnectServer" :loading="connecting"
-              :icon="$icons.Refresh">连接服务器</el-button>
-            <el-button @click="$router.push('/servers')" :icon="$icons.Back">返回服务器列表</el-button>
-          </div>
-        </template>
+        <FirewallOfflineState
+          v-if="!isServerOnline"
+          :connecting="connecting"
+          description="当前无法管理DDoS防御，请先连接服务器"
+          @connect="tryConnectServer"
+          @back="$router.push('/servers')"
+        />
 
         <div v-else>
           <el-card>
@@ -326,90 +294,20 @@
       </el-tab-pane>
     </el-tabs>
 
-    <!-- IP黑白名单管理对话框 -->
-    <el-dialog title="IP黑白名单管理" v-model="ipListsDialogVisible" :fullscreen="isMobile"
-      :width="isMobile ? '100%' : '450px'" :close-on-click-modal="false" center class="ip-lists-dialog"
-      :top="isMobile ? '0' : '10vh'" :append-to-body="true">
-      <!-- 标签导航 -->
-      <div class="ip-tab-nav" :class="{ 'mobile-tab-nav': isMobile }">
-        <div v-for="(tab, index) in ipTabs" :key="index"
-          :class="['ip-tab-item', { 'active': ipListsActiveTab === tab.value }]" @click="ipListsActiveTab = tab.value">
-          {{ tab.label }}
-        </div>
-      </div>
-
-      <!-- 表单区域 -->
-      <div class="ip-form-wrapper">
-        <!-- 添加IP白名单表单 -->
-        <template v-if="ipListsActiveTab === 'addWhite'">
-          <div class="form-group">
-            <label>IP地址</label>
-            <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
-          </div>
-
-          <div class="form-group">
-            <label>有效期(天)</label>
-            <div class="input-with-tip">
-              <el-input-number v-model="ipDuration" :min="0" :max="365" :step="1" class="full-width"
-                controls-position="right"></el-input-number>
-              <div class="form-tip">0表示永久</div>
-            </div>
-          </div>
-
-          <el-button type="primary" @click="addToWhitelist" :loading="loading" class="action-button">添加到白名单</el-button>
-        </template>
-
-        <!-- 添加IP黑名单表单 -->
-        <template v-if="ipListsActiveTab === 'addBlack'">
-          <div class="form-group">
-            <label>IP地址</label>
-            <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
-          </div>
-
-          <div class="form-group">
-            <label>有效期(小时)</label>
-            <div class="input-with-tip">
-              <el-input-number v-model="ipDuration" :min="0" :max="720" :step="1" class="full-width"
-                controls-position="right"></el-input-number>
-              <div class="form-tip">0表示永久</div>
-            </div>
-          </div>
-
-          <el-button type="danger" @click="addToBlacklist" :loading="loading" class="action-button">添加到黑名单</el-button>
-        </template>
-
-        <!-- 从白名单移除表单 -->
-        <template v-if="ipListsActiveTab === 'removeWhite'">
-          <div class="form-group">
-            <label>IP地址</label>
-            <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
-          </div>
-
-          <el-button type="warning" @click="removeFromWhitelist" :loading="loading"
-            class="action-button">从白名单移除</el-button>
-        </template>
-
-        <!-- 从黑名单移除表单 -->
-        <template v-if="ipListsActiveTab === 'removeBlack'">
-          <div class="form-group">
-            <label>IP地址</label>
-            <el-input v-model="ipToManage" placeholder="如: 192.168.1.1"></el-input>
-          </div>
-
-          <el-button type="warning" @click="removeFromBlacklist" :loading="loading"
-            class="action-button">从黑名单移除</el-button>
-        </template>
-      </div>
-
-      <div v-if="ipManageResult" class="ip-manage-result">
-        <pre>{{ ipManageResult }}</pre>
-      </div>
-
-      <template #footer><div class="dialog-footer">
-        <el-button @click="ipListsDialogVisible = false" size="small">关闭</el-button>
-        <el-button type="primary" @click="ipListsDialogVisible = false" size="small">完成</el-button>
-      </div></template>
-    </el-dialog>
+    <FirewallIpListsDialog
+      v-model:visible="ipListsDialogVisible"
+      v-model:activeTab="ipListsActiveTab"
+      v-model:ip="ipToManage"
+      v-model:duration="ipDuration"
+      :tabs="ipTabs"
+      :result="ipManageResult"
+      :loading="loading"
+      :is-mobile="isMobile"
+      @add-whitelist="addToWhitelist"
+      @add-blacklist="addToBlacklist"
+      @remove-whitelist="removeFromWhitelist"
+      @remove-blacklist="removeFromBlacklist"
+    />
 
     <!-- 服务器在线但脚本检查仍在加载 -->
     <div v-if="scriptCheckLoading && isServerOnline" class="loading-container">

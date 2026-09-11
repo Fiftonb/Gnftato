@@ -1,294 +1,200 @@
-import axios from 'axios';
-
-const API_URL = '/api/servers';
+import { serverApi } from '@/features/servers/serverApi';
+import { errorMessage, statusPatchFromResponse } from '@/features/servers/serverStatus';
 
 const state = {
   servers: [],
+  pendingRequests: 0,
   loading: false,
   error: null
 };
 
 const getters = {
-  getAllServers: state => state.servers,
-  getServerById: state => id => state.servers.find(server => server._id === id),
-  getLoading: state => state.loading,
-  getError: state => state.error
+  getAllServers: currentState => currentState.servers,
+  getServerById: currentState => id => currentState.servers.find(server => server._id === id),
+  getLoading: currentState => currentState.loading,
+  getError: currentState => currentState.error
 };
+
+async function withRequestState(commit, request) {
+  commit('requestStarted');
+  commit('setError', null);
+  try {
+    return await request();
+  } catch (error) {
+    commit('setError', errorMessage(error));
+    throw error;
+  } finally {
+    commit('requestFinished');
+  }
+}
+
+function applyStatusResponse(commit, id, responseData, fallback) {
+  commit('patchServer', {
+    id,
+    patch: statusPatchFromResponse(responseData, fallback)
+  });
+}
 
 const actions = {
   async getAllServers({ commit }) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.get(API_URL);
-      commit('setServers', response.data.data);
+    return withRequestState(commit, async () => {
+      const response = await serverApi.list();
+      commit('setServers', Array.isArray(response.data?.data) ? response.data.data : []);
       return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
+    });
   },
-  
+
   async getServer({ commit }, id) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.get(`${API_URL}/${id}`);
+    return withRequestState(commit, async () => {
+      const response = await serverApi.get(id);
+      if (response.data?.data) commit('upsertServer', response.data.data);
       return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
+    });
   },
-  
+
   async createServer({ commit, dispatch }, serverData) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(API_URL, serverData);
+    return withRequestState(commit, async () => {
+      const response = await serverApi.create(serverData);
       await dispatch('getAllServers');
       return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
+    });
   },
-  
+
   async updateServer({ commit, dispatch }, { id, data }) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.put(`${API_URL}/${id}`, data);
+    return withRequestState(commit, async () => {
+      const response = await serverApi.update(id, data);
       await dispatch('getAllServers');
       return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
+    });
   },
-  
+
   async deleteServer({ commit, dispatch }, id) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.delete(`${API_URL}/${id}`);
+    return withRequestState(commit, async () => {
+      const response = await serverApi.remove(id);
+      commit('removeServer', id);
       await dispatch('getAllServers');
       return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
+    });
   },
-  
-  async connectServer({ commit, dispatch }, id) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/${id}/connect`);
-      if (response.data && response.data.serverStatus) {
-        commit('updateServerStatus', {
-          id,
-          status: response.data.serverStatus,
-          lastCheck: new Date().toISOString()
-        });
-      } else {
-        await dispatch('getAllServers');
+
+  async connectServer({ commit }, id) {
+    return withRequestState(commit, async () => {
+      commit('patchServer', { id, patch: { status: 'connecting' } });
+      try {
+        const response = await serverApi.connect(id);
+        applyStatusResponse(commit, id, response.data, 'online');
+        return response.data;
+      } catch (error) {
+        commit('patchServer', { id, patch: { status: 'error', lastChecked: new Date().toISOString() } });
+        throw error;
       }
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
+    });
   },
-  
-  async disconnectServer({ commit, dispatch }, id) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/${id}/disconnect`);
-      if (response.data && response.data.serverStatus) {
-        commit('updateServerStatus', {
-          id,
-          status: response.data.serverStatus,
-          lastCheck: new Date().toISOString()
-        });
-      } else {
-        await dispatch('getAllServers');
+
+  async disconnectServer({ commit }, id) {
+    return withRequestState(commit, async () => {
+      commit('patchServer', { id, patch: { status: 'disconnecting' } });
+      try {
+        const response = await serverApi.disconnect(id);
+        applyStatusResponse(commit, id, response.data, 'offline');
+        return response.data;
+      } catch (error) {
+        commit('patchServer', { id, patch: { status: 'error', lastChecked: new Date().toISOString() } });
+        throw error;
       }
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
+    });
   },
-  
-  async checkStatus({ commit }, id) {
+
+  async checkStatus({ commit, getters: moduleGetters }, id) {
     commit('setError', null);
-    
     try {
-      const response = await axios.get(`${API_URL}/${id}/status`);
-      
-      // 处理连接套接字正常但状态未知的情况
-      if (response.data && response.data.data) {
-        // 检查日志信息
-        if (response.data.logs && 
-            (response.data.logs.includes('连接套接字正常') || 
-             response.data.logs.includes('SSH连接已就绪') || 
-             response.data.logs.includes('SSH连接建立成功'))) {
-          // 覆盖状态为online
-          response.data.data.status = 'online';
-          response.data.data.backendConnected = true;
-        }
-        
-        // 更新服务器状态
-        if (response.data.data.status) {
-          commit('updateServerStatus', {
-            id,
-            status: response.data.data.status,
-            lastCheck: new Date().toISOString(),
-            backendConnected: response.data.data.backendConnected || false
-          });
-        }
-      }
-      
+      const response = await serverApi.status(id);
+      const fallback = moduleGetters.getServerById(id)?.status || 'offline';
+      applyStatusResponse(commit, id, response.data, fallback);
       return response.data;
     } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    }
-  },
-  
-  // 测试服务器连接
-  async testConnection({ commit }, serverData) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/test-connection`, serverData);
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
-  },
-  
-  async executeCommand({ commit }, { serverId, command }) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/${serverId}/execute`, { command });
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
-  },
-  
-  async deployIptato({ commit, dispatch }, id) {
-    commit('setLoading', true);
-    commit('setError', null);
-    
-    try {
-      const response = await axios.post(`${API_URL}/${id}/deploy`);
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    } finally {
-      commit('setLoading', false);
-    }
-  },
-  
-  async getServerLogs({ commit }, id) {
-    commit('setError', null);
-    
-    try {
-      const response = await axios.get(`${API_URL}/${id}/logs`);
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
-      throw error;
-    }
-  },
-  
-  /**
-   * 检查服务器上是否已部署Nftato脚本
-   */
-  async checkScriptExists({ commit }, id) {
-    commit('setError', null);
-    
-    try {
-      const response = await axios.get(`${API_URL}/${id}/checkScript`);
-      return response.data;
-    } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
+      commit('setError', errorMessage(error));
       throw error;
     }
   },
 
-  /**
-   * 使用WebSocket部署Nftato脚本
-   */
-  async deployIptatoWithWebSocket({ commit }, id) {
-    commit('setLoading', true);
+  async testConnection({ commit }, serverData) {
+    return withRequestState(commit, async () => (await serverApi.testConnection(serverData)).data);
+  },
+
+  async executeCommand({ commit }, { serverId, command }) {
+    return withRequestState(commit, async () => (await serverApi.execute(serverId, command)).data);
+  },
+
+  async deployIptato({ commit }, id) {
+    return withRequestState(commit, async () => (await serverApi.deploy(id)).data);
+  },
+
+  async getServerLogs({ commit }, id) {
     commit('setError', null);
-    
     try {
-      // 调用部署API，指示使用WebSocket
-      const response = await axios.post(`${API_URL}/${id}/deploy`, { useWebSocket: true });
-      return response.data;
+      return (await serverApi.logs(id)).data;
     } catch (error) {
-      commit('setError', error.response ? error.response.data.message : error.message);
+      commit('setError', errorMessage(error));
       throw error;
-    } finally {
-      commit('setLoading', false);
     }
+  },
+
+  async checkScriptExists({ commit }, id) {
+    commit('setError', null);
+    try {
+      return (await serverApi.checkScript(id)).data;
+    } catch (error) {
+      commit('setError', errorMessage(error));
+      throw error;
+    }
+  },
+
+  async deployIptatoWithWebSocket({ commit }, id) {
+    return withRequestState(commit, async () => (await serverApi.deploy(id, { useWebSocket: true })).data);
   }
 };
 
 const mutations = {
-  setServers(state, servers) {
-    state.servers = servers;
+  setServers(currentState, servers) {
+    currentState.servers = servers;
   },
-  setLoading(state, loading) {
-    state.loading = loading;
+  upsertServer(currentState, server) {
+    const index = currentState.servers.findIndex(item => item._id === server._id);
+    if (index === -1) currentState.servers.push(server);
+    else currentState.servers.splice(index, 1, { ...currentState.servers[index], ...server });
   },
-  setError(state, error) {
-    state.error = error;
+  removeServer(currentState, id) {
+    currentState.servers = currentState.servers.filter(server => server._id !== id);
   },
-  updateServerStatus(state, { id, status, lastCheck, backendConnected }) {
-    const server = state.servers.find(s => s._id === id);
-    if (server) {
-      server.status = status;
-      server.lastCheck = lastCheck;
-      server.backendConnected = backendConnected;
-    }
+  patchServer(currentState, { id, patch }) {
+    const server = currentState.servers.find(item => item._id === id);
+    if (server) Object.assign(server, patch);
+  },
+  updateServerStatus(currentState, { id, status, lastCheck, lastChecked, backendConnected, backendConnectionValid }) {
+    mutations.patchServer(currentState, {
+      id,
+      patch: {
+        status,
+        lastChecked: lastChecked || lastCheck,
+        backendConnected,
+        backendConnectionValid
+      }
+    });
+  },
+  requestStarted(currentState) {
+    currentState.pendingRequests += 1;
+    currentState.loading = true;
+  },
+  requestFinished(currentState) {
+    currentState.pendingRequests = Math.max(0, currentState.pendingRequests - 1);
+    currentState.loading = currentState.pendingRequests > 0;
+  },
+  setLoading(currentState, loading) {
+    currentState.loading = loading;
+  },
+  setError(currentState, error) {
+    currentState.error = error;
   }
 };
 
@@ -298,4 +204,4 @@ export default {
   getters,
   actions,
   mutations
-}; 
+};
