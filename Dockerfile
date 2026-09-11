@@ -1,48 +1,28 @@
-FROM node:20-alpine
+FROM node:24-alpine AS client-build
 
-WORKDIR /app
-
-# 设置默认环境变量
-ENV NODE_ENV=development
-ENV PORT=3001
-ENV JWT_SECRET=default_secret_please_change
-ENV CORS_ORIGIN=*
-
-# 复制package.json文件
-COPY package*.json ./
-COPY server/package*.json ./server/
-COPY client/package*.json ./client/
-
-# 安装依赖
-RUN npm install
-RUN cd server && npm install --production=false
-RUN cd client && npm install
-
-# 复制应用程序代码
-COPY . .
-
-# 构建前端
+WORKDIR /app/client
+COPY client/package*.json ./
+RUN npm ci --include=dev
+COPY client/ ./
 RUN npm run build
 
-# 给启动脚本添加执行权限
-RUN chmod +x /app/server/start.sh
-# 确保文件使用Unix格式的换行符
-RUN if [ -f /app/server/start.sh ]; then \
-      sed -i 's/\r$//' /app/server/start.sh; \
-      echo "start.sh文件存在并已修复换行符"; \
-    else \
-      echo "start.sh文件不存在！"; \
-      exit 1; \
-    fi
+FROM node:24-alpine AS server-dependencies
 
-# 暴露端口
-EXPOSE 3001
-
-# 设置工作目录
 WORKDIR /app/server
+COPY server/package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-# 安装jq工具以支持config.json解析
-RUN apk add --no-cache jq
+FROM node:24-alpine AS runtime
 
-# 启动命令（使用绝对路径）
-CMD ["/bin/sh", "/app/server/start.sh"] 
+ENV NODE_ENV=production \
+    PORT=3001 \
+    DATA_DIR=/app/server/data
+
+WORKDIR /app/server
+COPY server/ ./
+COPY --from=server-dependencies /app/server/node_modules ./node_modules
+COPY --from=client-build /app/server/public ./public
+RUN sed -i 's/\r$//' start.sh && chmod +x start.sh && mkdir -p data
+
+EXPOSE 3001
+CMD ["/bin/sh", "/app/server/start.sh"]
