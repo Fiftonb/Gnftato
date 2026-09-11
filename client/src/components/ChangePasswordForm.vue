@@ -4,7 +4,7 @@
     :model="passwordForm" 
     :rules="rules" 
     label-width="120px"
-    @submit.native.prevent
+    @submit.prevent
   >
     <el-form-item label="当前密码" prop="currentPassword">
       <el-input 
@@ -25,7 +25,7 @@
         v-model="passwordForm.confirmPassword" 
         type="password" 
         placeholder="请再次输入新密码"
-        @keyup.enter.native="handleSubmit"
+        @keyup.enter="handleSubmit"
       ></el-input>
     </el-form-item>
     <el-form-item>
@@ -40,7 +40,15 @@ import axios from 'axios';
 
 export default {
   name: 'ChangePasswordForm',
+  emits: ['password-updated'],
   data() {
+    const validateNewPassword = (rule, value, callback) => {
+      if (value.trim().length < 12 || new TextEncoder().encode(value).length > 72) {
+        callback(new Error('密码至少12个字符，且不超过72字节'));
+      } else {
+        callback();
+      }
+    };
     // 密码一致性验证
     const validateConfirmPassword = (rule, value, callback) => {
       if (value !== this.passwordForm.newPassword) {
@@ -62,7 +70,7 @@ export default {
         ],
         newPassword: [
           { required: true, message: '请输入新密码', trigger: 'blur' },
-          { min: 6, message: '密码长度至少为6个字符', trigger: 'blur' }
+          { validator: validateNewPassword, trigger: 'blur' }
         ],
         confirmPassword: [
           { required: true, message: '请再次输入新密码', trigger: 'blur' },
@@ -74,6 +82,7 @@ export default {
   },
   methods: {
     async handleSubmit() {
+      if (this.loading) return;
       try {
         // 表单验证
         await this.$refs.passwordForm.validate();
@@ -87,6 +96,7 @@ export default {
         });
         
         if (response.data.success) {
+          await this.$store.dispatch('setSession', response.data.data);
           this.$message.success('密码修改成功');
           this.resetForm();
           this.$emit('password-updated');

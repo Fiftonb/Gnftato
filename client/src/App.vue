@@ -7,12 +7,13 @@
       <div class="header-right">
         <el-dropdown trigger="click" @command="handleCommand">
           <span class="user-dropdown">
-            {{ currentUser.username }} <i class="el-icon-arrow-down el-icon--right"></i>
+            {{ currentUser?.username || '' }} <el-icon class="el-icon-arrow-down el-icon--right"><ArrowDown /></el-icon>
           </span>
-          <el-dropdown-menu slot="dropdown">
+          <template #dropdown><el-dropdown-menu>
+            <el-dropdown-item v-if="currentUser?.isAdmin" command="create-user">创建账号</el-dropdown-item>
             <el-dropdown-item command="profile">个人资料</el-dropdown-item>
             <el-dropdown-item command="logout">退出登录</el-dropdown-item>
-          </el-dropdown-menu>
+          </el-dropdown-menu></template>
         </el-dropdown>
       </div>
     </el-header>
@@ -22,7 +23,6 @@
 
 <script>
 import { mapGetters, mapActions } from 'vuex';
-import axios from 'axios';
 
 export default {
   name: 'App',
@@ -30,10 +30,12 @@ export default {
     ...mapGetters(['isAuthenticated', 'currentUser'])
   },
   methods: {
-    ...mapActions(['logout', 'getCurrentUser']),
+    ...mapActions(['logout']),
     
     handleCommand(command) {
-      if (command === 'logout') {
+      if (command === 'create-user') {
+        this.$router.push('/users/new');
+      } else if (command === 'logout') {
         this.handleLogout();
       } else if (command === 'profile') {
         this.$router.push('/profile');
@@ -44,15 +46,6 @@ export default {
       this.logout();
       this.$router.push('/login');
       this.$message.success('已退出登录');
-    }
-  },
-  created() {
-    // 页面加载时设置认证头
-    const token = localStorage.getItem('token');
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      // 获取当前用户信息
-      this.getCurrentUser();
     }
   }
 }
@@ -114,7 +107,7 @@ html, body {
   max-width: 90%;
 }
 
-.el-dialog__wrapper {
+.el-overlay-dialog {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -122,12 +115,12 @@ html, body {
 }
 
 /* 适配服务器对话框 */
-.server-dialog .el-dialog {
+.el-dialog.server-dialog {
   margin: 15vh auto !important;
 }
 
 /* 特定处理ip列表对话框 */
-.ip-lists-dialog .el-dialog {
+.el-dialog.ip-lists-dialog {
   margin: 5vh auto !important;
 }
 
@@ -137,7 +130,7 @@ html, body {
     width: 90% !important;
   }
   
-  .ip-lists-dialog .el-dialog {
+  .el-dialog.ip-lists-dialog {
     width: 95% !important;
     margin: 2vh auto !important;
   }

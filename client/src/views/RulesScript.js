@@ -1,5 +1,6 @@
 import { mapActions, mapGetters } from 'vuex';
-import io from 'socket.io-client';
+import { io } from 'socket.io-client';
+import { markRaw } from 'vue';
 import RulesForward from './extensions/RulesForward';
 
 export default {
@@ -71,6 +72,7 @@ export default {
                 inboundPorts: 0,
                 inboundIPs: 0
             },
+            initialDataLoaded: false,
             dataLoaded: {
                 blockList: false,
                 sshPortStatus: false,
@@ -112,6 +114,8 @@ export default {
             scriptCheckLoading: true,
             deployLogs: [],
             socket: null,
+            viewDisposed: false,
+            fallbackDeploying: false,
             deployRoomId: null,
             deployComplete: false,
             deploySuccess: false,
@@ -241,7 +245,8 @@ export default {
         // 监听窗口大小变化
         window.addEventListener('resize', this.checkMobileDevice);
     },
-    beforeDestroy() {
+    beforeUnmount() {
+        this.viewDisposed = true;
         // 清理WebSocket连接
         if (this.socket) {
             this.socket.disconnect();
@@ -353,9 +358,9 @@ export default {
                 this.loading = false;
 
                 // 这是关键改进：只有当服务器在线且脚本存在时，才加载数据
-                if (this.isServerOnline && this.scriptExists && !this.dataLoaded) {
+                if (this.isServerOnline && this.scriptExists && !this.initialDataLoaded) {
                     // 标记数据已加载，避免重复加载
-                    this.dataLoaded = true;
+                    this.initialDataLoaded = true;
                     // 添加延迟以确保UI更新完成
                     setTimeout(() => {
                         this.refreshAllData();
@@ -1047,6 +1052,7 @@ export default {
                 });
 
             } catch (error) {
+                if (this.viewDisposed || !this.$store.getters.isAuthenticated) return;
                 this.deployComplete = true;
                 this.deploySuccess = false;
                 this.deploying = false;
@@ -1065,6 +1071,10 @@ export default {
 
         // 如果WebSocket部署失败，回退到普通部署方法
         async fallbackToNormalDeploy() {
+            if (this.viewDisposed || this.fallbackDeploying || !this.$store.getters.currentUser?.isAdmin) return;
+            this.fallbackDeploying = true;
+            this.clearTimers();
+            this.socket?.disconnect();
             try {
                 this.deployLogs.push({
                     type: 'log',
@@ -1099,6 +1109,7 @@ export default {
                     message: `常规部署错误: ${error.message}`
                 });
             } finally {
+                this.fallbackDeploying = false;
                 this.deployComplete = true;
                 this.deploying = false;
             }
@@ -1480,9 +1491,9 @@ export default {
                 }
 
                 this.debugInfo += '\n3. 检查前后端连接配置:\n';
-                const baseURL = process.env.VUE_APP_API_URL || window.location.origin;
+                const baseURL = (import.meta.env.VITE_API_URL || import.meta.env.VUE_APP_API_URL) || window.location.origin;
                 this.debugInfo += `API基础URL: ${baseURL}\n`;
-                this.debugInfo += `当前连接模式: ${process.env.NODE_ENV}\n`;
+                this.debugInfo += `当前连接模式: ${import.meta.env.MODE}\n`;
 
                 this.debugInfo += '\n4. 检查网络连接:\n';
                 try {
@@ -2761,9 +2772,9 @@ export default {
                 }
 
                 this.debugInfo += '\n3. 检查前后端连接配置:\n';
-                const baseURL = process.env.VUE_APP_API_URL || window.location.origin;
+                const baseURL = (import.meta.env.VITE_API_URL || import.meta.env.VUE_APP_API_URL) || window.location.origin;
                 this.debugInfo += `API基础URL: ${baseURL}\n`;
-                this.debugInfo += `当前连接模式: ${process.env.NODE_ENV}\n`;
+                this.debugInfo += `当前连接模式: ${import.meta.env.MODE}\n`;
 
                 this.debugInfo += '\n4. 检查网络连接:\n';
                 try {
@@ -3707,9 +3718,9 @@ export default {
                 }
 
                 this.debugInfo += '\n3. 检查前后端连接配置:\n';
-                const baseURL = process.env.VUE_APP_API_URL || window.location.origin;
+                const baseURL = (import.meta.env.VITE_API_URL || import.meta.env.VUE_APP_API_URL) || window.location.origin;
                 this.debugInfo += `API基础URL: ${baseURL}\n`;
-                this.debugInfo += `当前连接模式: ${process.env.NODE_ENV}\n`;
+                this.debugInfo += `当前连接模式: ${import.meta.env.MODE}\n`;
 
                 this.debugInfo += '\n4. 检查网络连接:\n';
                 try {
@@ -4591,16 +4602,17 @@ export default {
 
             // 创建新连接，确保使用正确的URL
             // 使用相对路径连接到当前域名下的Socket.io
-            const wsURL = window.location.origin;
+            const wsURL = import.meta.env.VITE_API_URL || import.meta.env.VUE_APP_API_URL || window.location.origin;
             console.log('尝试连接WebSocket:', wsURL);
 
-            this.socket = io(wsURL, {
+            this.socket = markRaw(io(wsURL, {
+                auth: callback => callback({ token: this.$store.state.auth.token }),
                 transports: ['websocket', 'polling'],
                 reconnection: true,
                 reconnectionAttempts: 10,   // 增加重连次数
                 reconnectionDelay: 1000,
                 timeout: 20000              // 增加连接超时时间
-            });
+            }));
 
             // 设置连接事件监听
             this.socket.on('connect', () => {
@@ -4627,7 +4639,6 @@ export default {
                         type: 'error',
                         message: '连接超时，尝试使用常规部署方法...'
                     });
-                    this.fallbackToNormalDeploy();
                 }
             }, 10000);
 
@@ -4737,6 +4748,24 @@ export default {
 
             // 监听连接错误
             this.socket.on('connect_error', (error) => {
+                if (error.data?.code === 'UNAUTHORIZED' || error.message === '未授权' || /token|认证|登录|jwt|unauthorized/i.test(error.message)) {
+                    this.clearTimers();
+                    this.deploying = false;
+                    this.socket.disconnect();
+                    this.$store.dispatch('logout');
+                    this.$router.replace('/login');
+                    this.$message.error('登录已过期，请重新登录');
+                    return;
+                }
+                if (error.data?.code === 'FORBIDDEN' || /管理员|权限|forbidden/i.test(error.message)) {
+                    this.clearTimers();
+                    this.deploying = false;
+                    this.socket.disconnect();
+                    this.$router.replace('/profile');
+                    this.$message.error('此操作需要管理员权限');
+                    return;
+                }
+
                 console.error('WebSocket连接错误:', error);
                 this.deployLogs.push({
                     type: 'error',
@@ -4807,12 +4836,25 @@ export default {
             try {
                 // 确保WebSocket已连接
                 if (!this.socket || !this.socket.connected) {
-                    await new Promise(resolve => {
-                        this.socket.on('connect', resolve);
-                        setTimeout(resolve, 3000); // 超时保护
+                    const socket = this.socket;
+                    if (!socket) throw new Error('实时连接未初始化');
+                    await new Promise((resolve, reject) => {
+                        const cleanup = () => {
+                            clearTimeout(timer);
+                            socket.off('connect', onConnect);
+                            socket.off('connect_error', onError);
+                        };
+                        const onConnect = () => { cleanup(); resolve(); };
+                        const onError = error => { cleanup(); reject(error); };
+                        const timer = setTimeout(() => onError(new Error('实时连接超时')), 10000);
+                        socket.once('connect', onConnect);
+                        socket.once('connect_error', onError);
                     });
                 }
 
+                if (this.viewDisposed || !this.$store.getters.isAuthenticated || !this.socket?.connected) {
+                    throw new Error('部署会话已关闭');
+                }
                 console.log('发起WebSocket部署请求，服务器ID:', serverId);
                 // 告知服务器开始部署过程
                 this.socket.emit('start_deploy', { serverId });
@@ -4887,6 +4929,10 @@ export default {
 
         // 如果WebSocket部署失败，回退到普通部署方法
         async fallbackToNormalDeploy() {
+            if (this.viewDisposed || this.fallbackDeploying || !this.$store.getters.currentUser?.isAdmin) return;
+            this.fallbackDeploying = true;
+            this.clearTimers();
+            this.socket?.disconnect();
             try {
                 this.deployLogs.push({
                     type: 'log',
@@ -4999,6 +5045,12 @@ export default {
         },
     },
     watch: {
+        '$store.state.auth.token'(token) {
+            if (!this.socket) return;
+            this.socket.disconnect();
+            if (token) this.socket.connect();
+            else this.clearTimers();
+        },
         activeTab(newTab, oldTab) {
             if (newTab === 'outbound' && !this.dataLoaded.blockList) {
                 this.refreshBlockList();
@@ -5030,9 +5082,9 @@ export default {
         },
         // 当脚本状态变化时，可能需要更新UI和数据
         scriptExists(newValue) {
-            if (newValue && this.isServerOnline && !this.dataLoaded) {
+            if (newValue && this.isServerOnline && !this.initialDataLoaded) {
                 // 脚本从不存在变为存在时，加载数据
-                this.dataLoaded = true;
+                this.initialDataLoaded = true;
                 setTimeout(() => {
                     this.refreshAllData();
                 }, 500);
@@ -5040,9 +5092,9 @@ export default {
         },
         // 当服务器状态变化时，也需要更新
         'server.status'(newValue) {
-            if (newValue === 'online' && this.scriptExists && !this.dataLoaded) {
+            if (newValue === 'online' && this.scriptExists && !this.initialDataLoaded) {
                 // 服务器从离线变为在线时，且脚本存在，加载数据
-                this.dataLoaded = true;
+                this.initialDataLoaded = true;
                 setTimeout(() => {
                     this.refreshAllData();
                 }, 500);

@@ -19,17 +19,17 @@
 
       <el-form-item label="认证方式" prop="authType">
         <el-radio-group v-model="form.authType">
-          <el-radio label="password">密码</el-radio>
-          <el-radio label="privateKey">密钥</el-radio>
+          <el-radio value="password">密码</el-radio>
+          <el-radio value="privateKey">密钥</el-radio>
         </el-radio-group>
       </el-form-item>
 
-      <el-form-item v-if="form.authType === 'password'" label="密码" prop="password">
-        <el-input v-model="form.password" type="password" placeholder="请输入密码"></el-input>
+      <el-form-item v-if="form.authType === 'password'" label="密码" :prop="isEdit && serverData?.authType === form.authType ? undefined : 'password'">
+        <el-input v-model="form.password" type="password" :placeholder="isEdit ? '留空保留现有密码' : '请输入密码'"></el-input>
       </el-form-item>
 
-      <el-form-item v-if="form.authType === 'privateKey'" label="私钥" prop="privateKey">
-        <el-input v-model="form.privateKey" type="textarea" :rows="8" placeholder="请输入私钥内容"></el-input>
+      <el-form-item v-if="form.authType === 'privateKey'" label="私钥" :prop="isEdit && serverData?.authType === form.authType ? undefined : 'privateKey'">
+        <el-input v-model="form.privateKey" type="textarea" :rows="8" :placeholder="isEdit ? '留空保留现有私钥' : '请输入私钥内容'"></el-input>
       </el-form-item>
 
       <el-form-item>
@@ -43,6 +43,7 @@
 <script>
 export default {
   name: 'ServerForm',
+  emits: ['submit'],
   props: {
     isEdit: {
       type: Boolean,
@@ -90,7 +91,9 @@ export default {
   },
   created() {
     if (this.isEdit && this.serverData) {
-      this.form = { ...this.form, ...this.serverData };
+      for (const key of Object.keys(this.form)) {
+        if (this.serverData[key] !== undefined) this.form[key] = this.serverData[key];
+      }
     }
   },
   methods: {
@@ -106,18 +109,14 @@ export default {
     resetForm() {
       this.$refs.serverForm.resetFields();
     },
-    getFormData() {
-      let valid = false;
-      this.$refs.serverForm.validate(isValid => {
-        valid = isValid;
-      });
-      
-      if (!valid) {
+    async getFormData() {
+      try {
+        await this.$refs.serverForm.validate();
+        return { ...this.form };
+      } catch {
         this.$message.warning('请填写完整的服务器信息');
         return null;
       }
-      
-      return { ...this.form };
     }
   }
 }

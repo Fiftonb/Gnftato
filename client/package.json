@@ -4,30 +4,31 @@
   "description": "Nftato防火墙规则多服务器管理面板前端",
   "private": true,
   "scripts": {
-    "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build",
-    "lint": "vue-cli-service lint"
+    "serve": "vite --host 127.0.0.1 --port 8080",
+    "build": "vite build",
+    "lint": "eslint src",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
-    "axios": "0.27.2",
-    "core-js": "^3.25.0",
-    "element-ui": "^2.15.10",
-    "socket.io-client": "^4.7.2",
-    "vue": "^2.7.10",
-    "vue-router": "^3.6.5",
-    "vuex": "^3.6.2"
+    "@element-plus/icons-vue": "2.3.2",
+    "axios": "1.20.0",
+    "element-plus": "2.14.5",
+    "socket.io-client": "4.8.3",
+    "vue": "3.5.42",
+    "vue-router": "4.6.4",
+    "vuex": "4.1.0"
   },
   "devDependencies": {
-    "@vue/cli-plugin-babel": "~5.0.8",
-    "@vue/cli-plugin-eslint": "~5.0.8",
-    "@vue/cli-plugin-router": "~5.0.8",
-    "@vue/cli-plugin-vuex": "~5.0.8",
-    "@vue/cli-service": "~5.0.8",
-    "babel-eslint": "^10.1.0",
-    "eslint": "^8.23.0",
-    "eslint-plugin-vue": "^9.4.0",
-    "sass": "^1.54.8",
-    "sass-loader": "^13.0.2",
-    "vue-template-compiler": "^2.7.10"
+    "@playwright/test": "1.63.0",
+    "@vitejs/plugin-vue": "6.0.8",
+    "eslint": "10.10.0",
+    "eslint-plugin-vue": "10.11.0",
+    "vite": "8.3.0",
+    "vue-eslint-parser": "10.4.1"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
   }
-} 
+}

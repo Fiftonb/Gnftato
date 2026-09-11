@@ -1,13 +1,15 @@
-import Vue from 'vue';
-import ElementUI from 'element-ui';
-import 'element-ui/lib/theme-chalk/index.css';
+import { createApp, markRaw } from 'vue';
+import ElementPlus from 'element-plus';
+import zhCn from 'element-plus/es/locale/lang/zh-cn';
+import { ArrowDown, Back, Close, Connection, Delete, Edit, Loading, Refresh, Operation, Setting, Upload, WarningFilled, Warning } from '@element-plus/icons-vue';
+import 'element-plus/dist/index.css';
 import App from './App.vue';
 import router from './router';
 import store from './store';
 import axios from 'axios';
 
 // 设置axios默认配置
-axios.defaults.baseURL = process.env.VUE_APP_API_URL || '';
+axios.defaults.baseURL = (import.meta.env.VITE_API_URL || import.meta.env.VUE_APP_API_URL) || '';
 
 // 添加响应拦截器处理认证错误
 axios.interceptors.response.use(
@@ -28,12 +30,12 @@ if (token) {
   axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 }
 
-Vue.prototype.$http = axios;
-Vue.use(ElementUI);
-Vue.config.productionTip = false;
-
-new Vue({
-  router,
-  store,
-  render: h => h(App)
-}).$mount('#app'); 
+const app = createApp(App);
+const icons = { ArrowDown, Back, Close, Connection, Delete, Edit, Loading, Refresh, Operation, Setting, Upload, WarningFilled, Warning };
+for (const [name, component] of Object.entries(icons)) app.component(name, component);
+app.config.globalProperties.$icons = markRaw(icons);
+app.config.globalProperties.$http = axios;
+app.use(ElementPlus, { locale: zhCn });
+app.use(store);
+app.use(router);
+app.mount('#app');

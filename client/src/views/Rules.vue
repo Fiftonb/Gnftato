@@ -26,14 +26,14 @@
 
       <div class="deploy-container">
         <div class="deploy-intro">
-          <i class="el-icon-warning"></i>
+          <el-icon class="el-icon-warning"><WarningFilled /></el-icon>
           <h3>需要部署Nftato脚本</h3>
           <p>Nftato脚本是防火墙规则管理的核心组件，使用此脚本可以更方便地管理nftables规则。</p>
           <p>点击"开始部署"按钮开始部署过程。</p>
         </div>
 
         <el-button type="success" size="large" @click="deployScript" :loading="deploying">
-          <i class="el-icon-upload"></i> 开始部署
+          <el-icon class="el-icon-upload"><Upload /></el-icon> 开始部署
         </el-button>
       </div>
     </div>
@@ -42,7 +42,7 @@
     <div v-if="deploying && deployLogs.length > 0" class="deploy-terminal">
       <div class="terminal-header">
         <span>脚本部署进度</span>
-        <el-button v-if="deployComplete" size="mini" type="success" @click="deployLogs = []">关闭</el-button>
+        <el-button v-if="deployComplete" size="small" type="success" @click="deployLogs = []">关闭</el-button>
       </div>
       <div class="terminal-body" ref="terminalBody">
         <div v-for="(log, index) in deployLogs" :key="index"
@@ -65,45 +65,45 @@
           </el-alert>
 
           <div class="server-offline">
-            <i class="el-icon-connection"></i>
+            <el-icon class="el-icon-connection"><Connection /></el-icon>
             <h3>服务器未连接</h3>
             <p>当前无法管理防火墙规则，请先连接服务器</p>
           </div>
 
           <div class="offline-actions">
             <el-button type="primary" @click="tryConnectServer" :loading="connecting"
-              icon="el-icon-refresh">连接服务器</el-button>
-            <el-button @click="$router.push('/servers')" icon="el-icon-back">返回服务器列表</el-button>
+              :icon="$icons.Refresh">连接服务器</el-button>
+            <el-button @click="$router.push('/servers')" :icon="$icons.Back">返回服务器列表</el-button>
           </div>
         </template>
 
         <div v-else>
           <el-card>
-            <div slot="header">
+            <template #header><div>
               <span>SSH端口状态</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshSSHPort">刷新</el-button>
-            </div>
+              <el-button style="float: right; padding: 3px 0" link type="primary" @click="refreshSSHPort">刷新</el-button>
+            </div></template>
 
             <pre v-if="sshPortStatus" class="output">{{ sshPortStatus }}</pre>
             <div v-else>加载中...</div>
           </el-card>
 
           <el-card style="margin-top: 20px;">
-            <div slot="header">
+            <template #header><div>
               <span>入网端口管理</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundPorts"
+              <el-button style="float: right; padding: 3px 0" link type="primary" @click="refreshInboundPorts"
                 :loading="loadingPorts">刷新</el-button>
-            </div>
+            </div></template>
 
             <el-table v-loading="loadingPorts" :data="formattedPorts" style="width: 100%">
               <el-table-column prop="port" label="端口" width="100"></el-table-column>
               <el-table-column prop="protocol" label="协议" width="100"></el-table-column>
               <el-table-column label="操作" width="110">
-                <template slot-scope="scope">
+                <template #default="scope">
                   <el-tooltip v-if="isSshPort(scope.row.port)" content="不能取消SSH端口放行，这可能导致无法连接服务器" placement="top">
-                    <el-button type="danger" size="mini" disabled>取消放行</el-button>
+                    <el-button type="danger" size="small" disabled>取消放行</el-button>
                   </el-tooltip>
-                  <el-button v-else type="danger" size="mini" @click="disallowPort(scope.row.port)"
+                  <el-button v-else type="danger" size="small" @click="disallowPort(scope.row.port)"
                     :loading="loadingPorts" :disabled="!isServerOnline">取消放行</el-button>
                 </template>
               </el-table-column>
@@ -111,7 +111,7 @@
 
             <el-divider></el-divider>
 
-            <el-form :inline="true" @submit.native.prevent="allowPort">
+            <el-form :inline="true" @submit.prevent="allowPort">
               <el-form-item label="放行端口">
                 <el-input v-model="portToAllow" placeholder="如: 80,443" :disabled="!isServerOnline"></el-input>
               </el-form-item>
@@ -123,17 +123,17 @@
           </el-card>
 
           <el-card style="margin-top: 20px;">
-            <div slot="header">
+            <template #header><div>
               <span>入网IP管理</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundIPs"
+              <el-button style="float: right; padding: 3px 0" link type="primary" @click="refreshInboundIPs"
                 :loading="loadingIPs">刷新</el-button>
-            </div>
+            </div></template>
 
             <el-table v-loading="loadingIPs" :data="inboundIPs" style="width: 100%">
               <el-table-column prop="ip" label="IP地址" width="180"></el-table-column>
               <el-table-column label="操作">
-                <template slot-scope="scope">
-                  <el-button type="danger" size="mini" @click="disallowIP(scope.row.ip || scope.row)"
+                <template #default="scope">
+                  <el-button type="danger" size="small" @click="disallowIP(scope.row.ip || scope.row)"
                     :loading="loadingIPs" :disabled="!isServerOnline">取消放行</el-button>
                 </template>
               </el-table-column>
@@ -141,7 +141,7 @@
 
             <el-divider></el-divider>
 
-            <el-form :inline="true" @submit.native.prevent="allowIP">
+            <el-form :inline="true" @submit.prevent="allowIP">
               <el-form-item label="放行IP">
                 <el-input v-model="ipToAllow" placeholder="如: 192.168.1.1" :disabled="!isServerOnline"></el-input>
               </el-form-item>
@@ -161,34 +161,34 @@
           </el-alert>
 
           <div class="server-offline">
-            <i class="el-icon-connection"></i>
+            <el-icon class="el-icon-connection"><Connection /></el-icon>
             <h3>服务器未连接</h3>
             <p>当前无法管理防火墙规则，请先连接服务器</p>
           </div>
 
           <div class="offline-actions">
             <el-button type="primary" @click="tryConnectServer" :loading="connecting"
-              icon="el-icon-refresh">连接服务器</el-button>
-            <el-button @click="$router.push('/servers')" icon="el-icon-back">返回服务器列表</el-button>
+              :icon="$icons.Refresh">连接服务器</el-button>
+            <el-button @click="$router.push('/servers')" :icon="$icons.Back">返回服务器列表</el-button>
           </div>
         </template>
 
         <div v-else>
           <el-card>
-            <div slot="header">
+            <template #header><div>
               <span>当前封禁列表</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshBlockList"
+              <el-button style="float: right; padding: 3px 0" link type="primary" @click="refreshBlockList"
                 :loading="loadingBlockList">刷新</el-button>
-            </div>
+            </div></template>
 
             <pre v-if="blockList" class="output">{{ blockList }}</pre>
             <div v-else>加载中...</div>
           </el-card>
 
           <el-card style="margin-top: 20px;">
-            <div slot="header">
+            <template #header><div>
               <span>封禁管理</span>
-            </div>
+            </div></template>
             <el-button-group>
               <el-button type="primary" @click="blockSPAM" :loading="loading"
                 :disabled="!isServerOnline">封禁SPAM</el-button>
@@ -196,7 +196,7 @@
 
             <el-divider></el-divider>
 
-            <el-form :inline="true" @submit.native.prevent="blockCustomPorts">
+            <el-form :inline="true" @submit.prevent="blockCustomPorts">
               <el-form-item label="自定义端口">
                 <el-input v-model="customPorts" placeholder="如: 6881,6882-6889" :disabled="!isServerOnline"></el-input>
               </el-form-item>
@@ -208,9 +208,9 @@
           </el-card>
 
           <el-card style="margin-top: 20px;">
-            <div slot="header">
+            <template #header><div>
               <span>解封管理</span>
-            </div>
+            </div></template>
             <el-button-group>
               <el-button type="success" @click="unblockSPAM" :loading="loading"
                 :disabled="!isServerOnline">解封SPAM</el-button>
@@ -218,7 +218,7 @@
 
             <el-divider></el-divider>
 
-            <el-form :inline="true" @submit.native.prevent="unblockCustomPorts">
+            <el-form :inline="true" @submit.prevent="unblockCustomPorts">
               <el-form-item label="自定义端口">
                 <el-input v-model="customUnblockPorts" placeholder="如: 6881,6882-6889"
                   :disabled="!isServerOnline"></el-input>
@@ -239,34 +239,34 @@
           </el-alert>
 
           <div class="server-offline">
-            <i class="el-icon-connection"></i>
+            <el-icon class="el-icon-connection"><Connection /></el-icon>
             <h3>服务器未连接</h3>
             <p>当前无法管理DDoS防御，请先连接服务器</p>
           </div>
 
           <div class="offline-actions">
             <el-button type="primary" @click="tryConnectServer" :loading="connecting"
-              icon="el-icon-refresh">连接服务器</el-button>
-            <el-button @click="$router.push('/servers')" icon="el-icon-back">返回服务器列表</el-button>
+              :icon="$icons.Refresh">连接服务器</el-button>
+            <el-button @click="$router.push('/servers')" :icon="$icons.Back">返回服务器列表</el-button>
           </div>
         </template>
 
         <div v-else>
           <el-card>
-            <div slot="header">
+            <template #header><div>
               <span>当前防御状态</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshDefenseStatus"
+              <el-button style="float: right; padding: 3px 0" link type="primary" @click="refreshDefenseStatus"
                 :loading="loadingDefenseStatus">刷新</el-button>
-            </div>
+            </div></template>
 
             <pre v-if="defenseStatus" class="output">{{ defenseStatus }}</pre>
             <div v-else>加载中...</div>
           </el-card>
 
           <el-card style="margin-top: 20px;">
-            <div slot="header">
+            <template #header><div>
               <span>DDoS防御配置</span>
-            </div>
+            </div></template>
             <el-button-group>
               <el-button type="primary" @click="setupDdosProtectionAction" :loading="loading"
                 :disabled="!isServerOnline">配置DDoS防御规则</el-button>
@@ -277,7 +277,7 @@
             <el-divider></el-divider>
 
             <h4>自定义端口DDoS防御</h4>
-            <el-form label-width="140px" @submit.native.prevent="setupCustomPortProtectionAction"
+            <el-form label-width="140px" @submit.prevent="setupCustomPortProtectionAction"
               :label-position="isMobile ? 'top' : 'right'" class="ddos-form">
               <el-form-item label="端口号">
                 <el-input v-model="customDdosPort" placeholder="如: 8080" :disabled="!isServerOnline"
@@ -327,7 +327,7 @@
     </el-tabs>
 
     <!-- IP黑白名单管理对话框 -->
-    <el-dialog title="IP黑白名单管理" :visible.sync="ipListsDialogVisible" :fullscreen="isMobile"
+    <el-dialog title="IP黑白名单管理" v-model="ipListsDialogVisible" :fullscreen="isMobile"
       :width="isMobile ? '100%' : '450px'" :close-on-click-modal="false" center class="ip-lists-dialog"
       :top="isMobile ? '0' : '10vh'" :append-to-body="true">
       <!-- 标签导航 -->
@@ -405,17 +405,17 @@
         <pre>{{ ipManageResult }}</pre>
       </div>
 
-      <div slot="footer" class="dialog-footer">
+      <template #footer><div class="dialog-footer">
         <el-button @click="ipListsDialogVisible = false" size="small">关闭</el-button>
         <el-button type="primary" @click="ipListsDialogVisible = false" size="small">完成</el-button>
-      </div>
+      </div></template>
     </el-dialog>
 
     <!-- 服务器在线但脚本检查仍在加载 -->
     <div v-if="scriptCheckLoading && isServerOnline" class="loading-container">
       <el-card>
         <div class="loading-content">
-          <i class="el-icon-loading"></i>
+          <el-icon class="el-icon-loading"><Loading /></el-icon>
           <p>正在检查服务器脚本状态...</p>
         </div>
       </el-card>

@@ -1,15 +1,15 @@
 <template>
   <div class="login-container">
     <el-card class="login-card">
-      <div slot="header" class="clearfix">
+      <template #header><div class="clearfix">
         <h2>Gnftato 防火墙管理系统</h2>
-      </div>
+      </div></template>
       <el-form 
         ref="loginForm" 
         :model="loginForm" 
         :rules="rules" 
         label-width="80px"
-        @submit.native.prevent="handleLogin"
+        @submit.prevent="handleLogin"
       >
         <el-form-item label="用户名" prop="username">
           <el-input v-model="loginForm.username" placeholder="请输入用户名"></el-input>
@@ -19,7 +19,7 @@
             v-model="loginForm.password" 
             type="password" 
             placeholder="请输入密码" 
-            @keyup.enter.native="handleLogin"
+            @keyup.enter="handleLogin"
           ></el-input>
         </el-form-item>
         <el-form-item>
@@ -27,7 +27,7 @@
         </el-form-item>
       </el-form>
       <div class="login-tip">
-        <small>默认管理员账户：admin / admin123</small>
+        <small>请使用管理员为您创建的账号登录</small>
       </div>
     </el-card>
   </div>
@@ -59,6 +59,7 @@ export default {
     ...mapActions(['login']),
     
     async handleLogin() {
+      if (this.loading) return;
       try {
         // 表单验证
         await this.$refs.loginForm.validate();
@@ -72,7 +73,7 @@ export default {
         });
         
         // 登录成功后重定向到首页
-        this.$router.push('/');
+        this.$router.push(this.$store.getters.currentUser?.isAdmin ? '/' : '/profile');
         this.$message.success('登录成功');
       } catch (error) {
         if (error.response && error.response.data) {

@@ -2,9 +2,9 @@
   <div class="home">
     <div class="dashboard">
       <el-card class="welcome-card">
-        <div slot="header">
+        <template #header><div>
           <h2>欢迎使用Nftato防火墙管理面板</h2>
-        </div>
+        </div></template>
         <div class="dashboard-content">
           <p>通过这个面板，您可以轻松管理多台服务器的nftables防火墙规则。</p>
           <ul>

@@ -1,15 +1,15 @@
 <template>
   <div class="register-container">
     <el-card class="register-card">
-      <div slot="header" class="clearfix">
-        <h2>注册账号</h2>
-      </div>
+      <template #header><div class="clearfix">
+        <h2>创建账号</h2>
+      </div></template>
       <el-form 
         ref="registerForm" 
         :model="registerForm" 
         :rules="rules" 
         label-width="100px"
-        @submit.native.prevent="handleRegister"
+        @submit.prevent="handleRegister"
       >
         <el-form-item label="用户名" prop="username">
           <el-input v-model="registerForm.username" placeholder="请输入用户名"></el-input>
@@ -26,12 +26,12 @@
             v-model="registerForm.confirmPassword" 
             type="password" 
             placeholder="请再次输入密码" 
-            @keyup.enter.native="handleRegister"
+            @keyup.enter="handleRegister"
           ></el-input>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="loading" @click="handleRegister">注册</el-button>
-          <el-button @click="goToLogin">返回登录</el-button>
+          <el-button type="primary" :loading="loading" @click="handleRegister">创建账号</el-button>
+          <el-button @click="goToLogin">返回</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -44,6 +44,13 @@ import { mapActions } from 'vuex';
 export default {
   name: 'Register',
   data() {
+    const validateNewPassword = (rule, value, callback) => {
+      if (value.trim().length < 12 || new TextEncoder().encode(value).length > 72) {
+        callback(new Error('密码至少12个字符，且不超过72字节'));
+      } else {
+        callback();
+      }
+    };
     // 密码确认验证
     const validateConfirmPassword = (rule, value, callback) => {
       if (value !== this.registerForm.password) {
@@ -66,7 +73,7 @@ export default {
         ],
         password: [
           { required: true, message: '请输入密码', trigger: 'blur' },
-          { min: 6, message: '密码至少6个字符', trigger: 'blur' }
+          { validator: validateNewPassword, trigger: 'blur' }
         ],
         confirmPassword: [
           { required: true, message: '请再次输入密码', trigger: 'blur' },
@@ -80,6 +87,7 @@ export default {
     ...mapActions(['register']),
     
     async handleRegister() {
+      if (this.loading) return;
       try {
         // 表单验证
         await this.$refs.registerForm.validate();
@@ -93,8 +101,8 @@ export default {
         });
         
         // 注册成功后重定向到首页
-        this.$message.success('注册成功，已自动登录');
-        this.$router.push('/');
+        this.$message.success('账号已创建');
+        this.$router.push('/profile');
       } catch (error) {
         if (error.response && error.response.data) {
           this.$message.error(error.response.data.message || '注册失败');
@@ -109,18 +117,10 @@ export default {
     },
     
     goToLogin() {
-      this.$router.push('/login');
+      this.$router.push('/profile');
     }
   },
-  // 阻止已登录用户访问注册页
-  beforeRouteEnter(to, from, next) {
-    const token = localStorage.getItem('token');
-    if (token) {
-      next('/');
-    } else {
-      next();
-    }
-  }
+
 };
 </script>
 

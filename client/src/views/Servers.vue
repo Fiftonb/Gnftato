@@ -14,12 +14,12 @@
       show-icon
       style="margin-bottom: 15px;"
     >
-      <template slot="title">
+      <template #title>
         <span style="font-weight: bold;">检测到系统重启！</span>
       </template>
       <div>
         服务器状态已重置，某些连接可能已断开。已自动同步所有状态为最新。
-        <el-button size="mini" type="primary" @click="batchConnect" style="margin-left: 10px;" :disabled="!hasOfflineServers">重新连接所有服务器</el-button>
+        <el-button size="small" type="primary" @click="batchConnect" style="margin-left: 10px;" :disabled="!hasOfflineServers">重新连接所有服务器</el-button>
       </div>
     </el-alert>
 
@@ -64,7 +64,7 @@
         label="状态"
         width="160"
       >
-        <template slot-scope="scope">
+        <template #default="scope">
           <div class="status-container">
             <el-tag
               :type="getStatusTagType(scope.row.status)"
@@ -72,10 +72,10 @@
               {{ statusText[scope.row.status] }}
             </el-tag>
             <el-button 
-              type="text" 
-              icon="el-icon-refresh" 
+              link type="primary"
+              :icon="$icons.Refresh"
               circle 
-              size="mini" 
+              size="small"
               @click="checkServerStatus(scope.row)"
               :loading="checkingServers[scope.row._id]"
               class="refresh-button"
@@ -88,14 +88,14 @@
               trigger="hover"
             >
               <div>
-                <p><i class="el-icon-warning" style="color: #E6A23C;"></i> {{ errorReasons[scope.row._id] }}</p>
+                <p><el-icon class="el-icon-warning" style="color: #E6A23C;"><WarningFilled /></el-icon> {{ errorReasons[scope.row._id] }}</p>
                 <el-divider></el-divider>
                 <p>建议操作：</p>
-                <el-button size="mini" type="primary" @click="handleReconnect(scope.row)">尝试重连</el-button>
-                <el-button size="mini" @click="checkServerStatus(scope.row)">刷新状态</el-button>
-                <el-button size="mini" type="success" @click="handleConnectionRetry(scope.row)">强制同步状态</el-button>
+                <el-button size="small" type="primary" @click="handleReconnect(scope.row)">尝试重连</el-button>
+                <el-button size="small" @click="checkServerStatus(scope.row)">刷新状态</el-button>
+                <el-button size="small" type="success" @click="handleConnectionRetry(scope.row)">强制同步状态</el-button>
               </div>
-              <el-badge slot="reference" is-dot type="danger"></el-badge>
+              <template #reference><el-badge is-dot type="danger"></el-badge></template>
             </el-popover>
           </div>
           <div v-if="scope.row.lastChecked" class="status-time">
@@ -104,7 +104,7 @@
           <!-- 状态不同步提示 -->
           <div v-if="scope.row.status === 'error' && errorReasons[scope.row._id] && errorReasons[scope.row._id].includes('检查服务器日志')" class="sync-warning">
             <el-link type="warning" @click="handleConnectionRetry(scope.row)">
-              <i class="el-icon-warning-outline"></i> 前后端状态可能不同步，点击修复
+              <el-icon class="el-icon-warning-outline"><WarningFilled /></el-icon> 前后端状态可能不同步，点击修复
             </el-link>
           </div>
         </template>
@@ -112,46 +112,46 @@
       <el-table-column
         label="操作"
       >
-        <template slot-scope="scope">
+        <template #default="scope">
           <div class="operation-buttons">
             <el-button
-              size="mini"
+              size="small"
               @click="handleEdit(scope.row)"
-              icon="el-icon-edit"
+              :icon="$icons.Edit"
             >编辑</el-button>
             <el-button
               v-if="scope.row.status !== 'online' && scope.row.status !== 'connecting' && scope.row.status !== 'disconnecting'"
-              size="mini"
+              size="small"
               type="success"
               @click="handleConnect(scope.row)"
               :loading="connectingServers[scope.row._id]"
-              icon="el-icon-connection"
+              :icon="$icons.Connection"
             >连接</el-button>
             <el-button
               v-else-if="scope.row.status === 'online'"
-              size="mini"
+              size="small"
               type="warning"
               @click="handleDisconnect(scope.row)"
               :loading="disconnectingServers[scope.row._id]"
-              icon="el-icon-close"
+              :icon="$icons.Close"
             >断开</el-button>
             <el-button
               v-else
-              size="mini"
+              size="small"
               disabled
             >{{ statusText[scope.row.status] }}</el-button>
             <el-button
               v-if="scope.row.status === 'online'"
-              size="mini"
+              size="small"
               type="primary"
               @click="handleManageRules(scope.row)"
-              icon="el-icon-setting"
+              :icon="$icons.Setting"
             >管理规则</el-button>
             <el-button
-              size="mini"
+              size="small"
               type="danger"
               @click="handleDelete(scope.row)"
-              icon="el-icon-delete"
+              :icon="$icons.Delete"
             >删除</el-button>
           </div>
         </template>
@@ -161,21 +161,21 @@
     <!-- 移动端卡片式布局 -->
     <div v-if="isMobile && !loading && servers.length > 0" class="mobile-server-cards">
       <el-card v-for="server in servers" :key="server._id" class="mobile-server-card" shadow="hover">
-        <div slot="header" class="mobile-card-header">
+        <template #header><div class="mobile-card-header">
           <span class="server-name">{{ server.name }}</span>
           <el-tag :type="getStatusTagType(server.status)" size="small">
             {{ statusText[server.status] }}
           </el-tag>
           <el-button 
-            type="text" 
-            icon="el-icon-refresh" 
+            link type="primary"
+            :icon="$icons.Refresh"
             circle 
-            size="mini" 
+            size="small"
             @click="checkServerStatus(server)"
             :loading="checkingServers[server._id]"
             class="refresh-button"
           ></el-button>
-        </div>
+        </div></template>
         
         <div class="server-info">
           <p><strong>主机地址:</strong> {{ server.host }}</p>
@@ -187,60 +187,60 @@
           
           <!-- 错误提示 -->
           <div v-if="errorReasons[server._id]" class="mobile-error-reason">
-            <i class="el-icon-warning" style="color: #E6A23C;"></i> {{ errorReasons[server._id] }}
+            <el-icon class="el-icon-warning" style="color: #E6A23C;"><WarningFilled /></el-icon> {{ errorReasons[server._id] }}
           </div>
         </div>
         
         <div class="mobile-operation-buttons">
           <el-button
-            size="mini"
+            size="small"
             @click="handleEdit(server)"
-            icon="el-icon-edit"
+            :icon="$icons.Edit"
             circle
           ></el-button>
           
           <el-button
             v-if="server.status !== 'online' && server.status !== 'connecting' && server.status !== 'disconnecting'"
-            size="mini"
+            size="small"
             type="success"
             @click="handleConnect(server)"
             :loading="connectingServers[server._id]"
-            icon="el-icon-connection"
+            :icon="$icons.Connection"
             circle
           ></el-button>
           
           <el-button
             v-else-if="server.status === 'online'"
-            size="mini"
+            size="small"
             type="warning"
             @click="handleDisconnect(server)"
             :loading="disconnectingServers[server._id]"
-            icon="el-icon-close"
+            :icon="$icons.Close"
             circle
           ></el-button>
           
           <el-button
             v-else
-            size="mini"
+            size="small"
             disabled
             circle
-            icon="el-icon-loading"
+            :icon="$icons.Loading"
           ></el-button>
           
           <el-button
             v-if="server.status === 'online'"
-            size="mini"
+            size="small"
             type="primary"
             @click="handleManageRules(server)"
-            icon="el-icon-setting"
+            :icon="$icons.Setting"
             circle
           ></el-button>
           
           <el-button
-            size="mini"
+            size="small"
             type="danger"
             @click="handleDelete(server)"
-            icon="el-icon-delete"
+            :icon="$icons.Delete"
             circle
           ></el-button>
         </div>
@@ -250,37 +250,37 @@
     <!-- 批量操作工具栏 -->
     <div v-if="servers.length > 0" class="batch-actions">
       <el-card shadow="hover">
-        <div slot="header" class="clearfix">
-          <span><i class="el-icon-s-operation"></i> 批量操作</span>
-        </div>
+        <template #header><div class="clearfix">
+          <span><el-icon class="el-icon-s-operation"><Operation /></el-icon> 批量操作</span>
+        </div></template>
         <div class="batch-buttons" :class="{'mobile-batch-buttons': isMobile}">
           <el-button 
-            size="small" 
+            size="small"
             type="success" 
             @click="batchConnect" 
             :disabled="!hasOfflineServers" 
-            icon="el-icon-connection"
+            :icon="$icons.Connection"
             class="batch-button"
           >
             <span class="button-text">批量连接</span>
             <span v-if="hasOfflineServers" class="count-badge">({{ getOfflineCount() }})</span>
           </el-button>
           <el-button 
-            size="small" 
+            size="small"
             type="warning" 
             @click="batchDisconnect" 
             :disabled="!hasOnlineServers" 
-            icon="el-icon-close"
+            :icon="$icons.Close"
             class="batch-button"
           >
             <span class="button-text">批量断开</span>
             <span v-if="hasOnlineServers" class="count-badge">({{ getOnlineCount() }})</span>
           </el-button>
           <el-button 
-            size="small" 
+            size="small"
             type="info" 
             @click="checkAllServersStatus" 
-            icon="el-icon-refresh"
+            :icon="$icons.Refresh"
             class="batch-button"
           >
             <span class="button-text">刷新所有状态</span>
@@ -292,9 +292,10 @@
     <!-- 添加/编辑服务器对话框 -->
     <el-dialog
       :title="isEdit ? '编辑服务器' : '添加服务器'"
-      :visible.sync="dialogVisible"
+      v-model="dialogVisible"
       :width="isMobile ? '90%' : '50%'"
       class="server-dialog"
+      destroy-on-close
     >
       <server-form
         :is-edit="isEdit"
@@ -302,11 +303,11 @@
         @submit="handleFormSubmit"
         ref="serverForm"
       ></server-form>
-      <div slot="footer" class="dialog-footer" :class="{'mobile-footer': isMobile}">
+      <template #footer><div class="dialog-footer" :class="{'mobile-footer': isMobile}">
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button v-if="!isEdit" type="primary" @click="handleTestConnection" :loading="testingConnection">测试连接</el-button>
         <el-button type="primary" @click="$refs.serverForm.submitForm()">确定</el-button>
-      </div>
+      </div></template>
     </el-dialog>
   </div>
 </template>
@@ -360,7 +361,6 @@ export default {
   },
   created() {
     // 检查面板服务器是否重启过
-    this.checkPanelRestart();
     this.fetchServers();
     // 加载本地缓存的状态
     this.loadCachedStates();
@@ -387,7 +387,7 @@ export default {
     // 监听窗口大小变化
     window.addEventListener('resize', this.checkMobileDevice);
   },
-  beforeDestroy() {
+  beforeUnmount() {
     // 组件销毁时清除定时器
     if (this.statusCheckInterval) {
       clearInterval(this.statusCheckInterval);
@@ -412,7 +412,6 @@ export default {
       'checkStatus',
       'testConnection',
       'sendHeartbeat',
-      'getPanelStatus',  // 新增获取面板状态API
       'getServerLogs'  // 新增获取服务器日志API
     ]),
     async fetchServers() {
@@ -457,13 +456,13 @@ export default {
               const index = this.servers.findIndex(s => s._id === server._id);
               if (index !== -1) {
                 // 使用过渡动画突出显示状态变化
-                this.$set(this.servers[index], 'statusChanged', true);
-                this.$set(this.servers[index], 'status', actualStatus);
-                this.$set(this.servers[index], 'lastChecked', Date.now());
+                this.servers[index]['statusChanged'] = true;
+                this.servers[index]['status'] = actualStatus;
+                this.servers[index]['lastChecked'] = Date.now();
                 
                 // 2秒后移除高亮效果
                 setTimeout(() => {
-                  this.$set(this.servers[index], 'statusChanged', false);
+                  this.servers[index]['statusChanged'] = false;
                 }, 2000);
               }
             }
@@ -472,14 +471,14 @@ export default {
             // 假设验证失败意味着连接有问题
             const index = this.servers.findIndex(s => s._id === server._id);
             if (index !== -1) {
-              this.$set(this.servers[index], 'status', 'error');
-              this.$set(this.servers[index], 'statusChanged', true);
-              this.$set(this.errorReasons, server._id, '连接验证失败，可能因为服务重启');
-              this.$set(this.servers[index], 'lastChecked', Date.now());
+              this.servers[index]['status'] = 'error';
+              this.servers[index]['statusChanged'] = true;
+              this.errorReasons[server._id] = '连接验证失败，可能因为服务重启';
+              this.servers[index]['lastChecked'] = Date.now();
               
               // 2秒后移除高亮效果
               setTimeout(() => {
-                this.$set(this.servers[index], 'statusChanged', false);
+                this.servers[index]['statusChanged'] = false;
               }, 2000);
             }
           }
@@ -496,38 +495,6 @@ export default {
         // 通知已经改为顶部横幅，这里不需要再显示
       }
     },
-    // 检查面板服务器是否重启过
-    async checkPanelRestart() {
-      try {
-        // 先获取本地存储的会话ID
-        const storedSessionId = localStorage.getItem('panelSessionId');
-        
-        // 获取当前面板服务器的会话ID
-        const response = await this.getPanelStatus();
-        if (response && response.data && response.data.sessionId) {
-          const currentSessionId = response.data.sessionId;
-          this.sessionId = currentSessionId;
-          
-          // 保存新的会话ID
-          localStorage.setItem('panelSessionId', currentSessionId);
-          
-          // 如果存在之前的会话ID且与当前不同，说明面板重启过
-          if (storedSessionId && storedSessionId !== currentSessionId) {
-            this.isServerRestarted = true;
-            this.handlePanelRestart();
-            return true;
-          }
-        }
-        return false;
-      } catch (error) {
-        console.error('检查面板状态失败:', error);
-        // 如果无法获取面板状态，可能也是重启导致的
-        this.isServerRestarted = true;
-        this.handlePanelRestart();
-        return true;
-      }
-    },
-    
     // 处理面板重启后的状态恢复
     async handlePanelRestart() {
       // 显示面板重启通知
@@ -582,8 +549,8 @@ export default {
                 onlineServers.forEach(server => {
                   const index = this.servers.findIndex(s => s._id === server._id);
                   if (index !== -1) {
-                    this.$set(this.servers[index], 'status', 'error');
-                    this.$set(this.errorReasons, server._id, '面板重启后连接状态未恢复');
+                    this.servers[index]['status'] = 'error';
+                    this.errorReasons[server._id] = '面板重启后连接状态未恢复';
                   }
                 });
               }
@@ -653,11 +620,11 @@ export default {
     },
     async handleTestConnection() {
       // 获取表单数据进行测试连接
-      const formData = this.$refs.serverForm.getFormData();
+      const formData = await this.$refs.serverForm.getFormData();
       if (!formData) return;
       
       // 设置测试连接加载状态
-      this.$set(this, 'testingConnection', true);
+      this['testingConnection'] = true;
       
       // 显示加载提示
       let loadingMessage = null;
@@ -747,7 +714,7 @@ export default {
         }
         
         // 重置测试连接加载状态
-        this.$set(this, 'testingConnection', false);
+        this['testingConnection'] = false;
       }
     },
     async handleFormSubmit(formData) {
@@ -788,7 +755,7 @@ export default {
     async verifyServerStatus(server) {
       // 再次确认服务器状态，防止状态不一致
       try {
-        this.$set(this.checkingServers, server._id, true);
+        this.checkingServers[server._id] = true;
         
         // 先获取日志信息判断实际连接状态
         let logBasedStatus = null;
@@ -815,9 +782,9 @@ export default {
           // 更新服务器状态
           const index = this.servers.findIndex(s => s._id === server._id);
           if (index !== -1 && this.servers[index].status !== 'online') {
-            this.$set(this.servers[index], 'status', 'online');
-            this.$set(this.servers[index], 'lastChecked', Date.now());
-            this.$delete(this.errorReasons, server._id);
+            this.servers[index]['status'] = 'online';
+            this.servers[index]['lastChecked'] = Date.now();
+            delete this.errorReasons[server._id];
           }
           
           return 'online';
@@ -833,9 +800,9 @@ export default {
           // 更新服务器状态
           const index = this.servers.findIndex(s => s._id === server._id);
           if (index !== -1 && this.servers[index].status !== 'online') {
-            this.$set(this.servers[index], 'status', 'online');
-            this.$set(this.servers[index], 'lastChecked', Date.now());
-            this.$delete(this.errorReasons, server._id);
+            this.servers[index]['status'] = 'online';
+            this.servers[index]['lastChecked'] = Date.now();
+            delete this.errorReasons[server._id];
           }
           
           return 'online';
@@ -844,7 +811,7 @@ export default {
         // 如果API显示非在线状态，更新本地状态
         const index = this.servers.findIndex(s => s._id === server._id);
         if (index !== -1 && this.servers[index].status !== actualStatus) {
-          this.$set(this.servers[index], 'status', actualStatus);
+          this.servers[index]['status'] = actualStatus;
           this.$message.warning(`服务器${server.name}状态已更新为${this.statusText[actualStatus]}`);
         }
         
@@ -853,18 +820,18 @@ export default {
         console.error('验证服务器状态失败:', error);
         return 'error';
       } finally {
-        this.$set(this.checkingServers, server._id, false);
+        this.checkingServers[server._id] = false;
       }
     },
     async handleConnect(server) {
       try {
         // 设置连接中状态
-        this.$set(this.connectingServers, server._id, true);
+        this.connectingServers[server._id] = true;
         
         // 先更新本地状态为"连接中"
         const index = this.servers.findIndex(s => s._id === server._id);
         if (index !== -1) {
-          this.$set(this.servers[index], 'status', 'connecting');
+          this.servers[index]['status'] = 'connecting';
         }
         
         // 显示连接进度通知
@@ -888,14 +855,14 @@ export default {
         if (serverStatus === 'online') {
           // 直接从API返回更新状态，避免额外请求
           if (index !== -1) {
-            this.$set(this.servers[index], 'status', 'online');
-            this.$set(this.servers[index], 'lastChecked', Date.now());
-            this.$set(this.servers[index], 'statusChanged', true);
-            this.$delete(this.errorReasons, server._id);
+            this.servers[index]['status'] = 'online';
+            this.servers[index]['lastChecked'] = Date.now();
+            this.servers[index]['statusChanged'] = true;
+            delete this.errorReasons[server._id];
             
             // 2秒后移除高亮效果
             setTimeout(() => {
-              this.$set(this.servers[index], 'statusChanged', false);
+              this.servers[index]['statusChanged'] = false;
             }, 2000);
           }
           
@@ -921,14 +888,14 @@ export default {
             if (actualStatus === 'online' || backendConnected) {
               // 服务器已连接，更新UI
               if (index !== -1) {
-                this.$set(this.servers[index], 'status', 'online');
-                this.$set(this.servers[index], 'lastChecked', Date.now());
-                this.$set(this.servers[index], 'statusChanged', true);
-                this.$delete(this.errorReasons, server._id);
+                this.servers[index]['status'] = 'online';
+                this.servers[index]['lastChecked'] = Date.now();
+                this.servers[index]['statusChanged'] = true;
+                delete this.errorReasons[server._id];
                 
                 // 2秒后移除高亮效果
                 setTimeout(() => {
-                  this.$set(this.servers[index], 'statusChanged', false);
+                  this.servers[index]['statusChanged'] = false;
                 }, 2000);
               }
               
@@ -952,10 +919,10 @@ export default {
                 if (logs.includes('服务器已连接且连接有效') || connectionStatus.connectionValid) {
                   // 实际已连接，前后端状态不一致
                   if (index !== -1) {
-                    this.$set(this.servers[index], 'status', 'online');
-                    this.$set(this.servers[index], 'lastChecked', Date.now());
-                    this.$set(this.servers[index], 'statusChanged', true);
-                    this.$delete(this.errorReasons, server._id);
+                    this.servers[index]['status'] = 'online';
+                    this.servers[index]['lastChecked'] = Date.now();
+                    this.servers[index]['statusChanged'] = true;
+                    delete this.errorReasons[server._id];
                   }
                   
                   this.$message.success('服务器实际已连接成功，已修复状态显示');
@@ -965,8 +932,8 @@ export default {
                 } else {
                   // 确实连接失败
                   if (index !== -1) {
-                    this.$set(this.servers[index], 'status', 'error');
-                    this.$set(this.errorReasons, server._id, '连接失败，请查看服务器日志');
+                    this.servers[index]['status'] = 'error';
+                    this.errorReasons[server._id] = '连接失败，请查看服务器日志';
                   }
                 }
               } catch (logError) {
@@ -974,8 +941,8 @@ export default {
                 
                 // 无法获取日志，保守处理为错误
                 if (index !== -1) {
-                  this.$set(this.servers[index], 'status', 'error');
-                  this.$set(this.errorReasons, server._id, '连接状态确认失败');
+                  this.servers[index]['status'] = 'error';
+                  this.errorReasons[server._id] = '连接状态确认失败';
                 }
               }
             }
@@ -984,38 +951,38 @@ export default {
             
             // 无法获取状态，保守处理为错误
             if (index !== -1) {
-              this.$set(this.servers[index], 'status', 'error');
-              this.$set(this.errorReasons, server._id, '连接后状态确认失败');
+              this.servers[index]['status'] = 'error';
+              this.errorReasons[server._id] = '连接后状态确认失败';
             }
           }
         }
       } catch (error) {
         // 解析并记录错误原因
         const errorMsg = this.parseErrorMessage(error);
-        this.$set(this.errorReasons, server._id, errorMsg);
+        this.errorReasons[server._id] = errorMsg;
         
         this.$message.error('连接服务器失败: ' + errorMsg);
         
         // 如果失败，更新状态为错误
         const index = this.servers.findIndex(s => s._id === server._id);
         if (index !== -1) {
-          this.$set(this.servers[index], 'status', 'error');
-          this.$set(this.servers[index], 'lastChecked', Date.now());
+          this.servers[index]['status'] = 'error';
+          this.servers[index]['lastChecked'] = Date.now();
         }
       } finally {
-        this.$set(this.connectingServers, server._id, false);
+        this.connectingServers[server._id] = false;
         this.saveStatesToCache();
       }
     },
     async handleDisconnect(server) {
       try {
         // 设置断开中状态
-        this.$set(this.disconnectingServers, server._id, true);
+        this.disconnectingServers[server._id] = true;
         
         // 先更新本地状态为"断开中"
         const index = this.servers.findIndex(s => s._id === server._id);
         if (index !== -1) {
-          this.$set(this.servers[index], 'status', 'disconnecting');
+          this.servers[index]['status'] = 'disconnecting';
         }
         
         // 停止心跳检测
@@ -1036,7 +1003,7 @@ export default {
         
         // 立即更新本地状态
         if (index !== -1) {
-          this.$set(this.servers[index], 'status', 'offline');
+          this.servers[index]['status'] = 'offline';
         }
         
         // 强制刷新所有服务器状态
@@ -1047,7 +1014,7 @@ export default {
         await this.checkServerStatus(server);
       } finally {
         // 清除断开中状态
-        this.$set(this.disconnectingServers, server._id, false);
+        this.disconnectingServers[server._id] = false;
         this.saveStatesToCache();
       }
     },
@@ -1061,7 +1028,7 @@ export default {
       // 连接前预检，确保服务器实际在线状态
       try {
         // 显示检查状态的加载提示
-        this.$set(this.checkingServers, server._id, true);
+        this.checkingServers[server._id] = true;
         
         // 1. 先检查服务器日志，看实际连接状态
         let isActuallyConnected = false;
@@ -1081,9 +1048,9 @@ export default {
               // 自动修复状态不一致
               const index = this.servers.findIndex(s => s._id === server._id);
               if (index !== -1 && this.servers[index].status !== 'online') {
-                this.$set(this.servers[index], 'status', 'online');
-                this.$set(this.servers[index], 'lastChecked', Date.now());
-                this.$delete(this.errorReasons, server._id);
+                this.servers[index]['status'] = 'online';
+                this.servers[index]['lastChecked'] = Date.now();
+                delete this.errorReasons[server._id];
                 
                 // 显示已自动修复状态的提示
                 this.$message.info(`服务器 ${server.name} 实际已连接，状态已修复`);
@@ -1116,8 +1083,8 @@ export default {
           // 更新服务器状态
           const index = this.servers.findIndex(s => s._id === server._id);
           if (index !== -1) {
-            this.$set(this.servers[index], 'status', 'online');
-            this.$set(this.servers[index], 'lastChecked', Date.now());
+            this.servers[index]['status'] = 'online';
+            this.servers[index]['lastChecked'] = Date.now();
           }
           
           // 直接跳转到规则管理
@@ -1152,25 +1119,25 @@ export default {
           });
         }).catch(() => {});
       } finally {
-        this.$set(this.checkingServers, server._id, false);
+        this.checkingServers[server._id] = false;
       }
     },
     async checkServerStatus(server) {
       try {
-        this.$set(this.checkingServers, server._id, true);
+        this.checkingServers[server._id] = true;
         const response = await this.checkStatus(server._id);
         // 更新当前服务器状态
         const index = this.servers.findIndex(s => s._id === server._id);
         if (index !== -1) {
-          this.$set(this.servers[index], 'status', response.data.data.status);
-          this.$set(this.servers[index], 'lastChecked', Date.now());
+          this.servers[index]['status'] = response.data.data.status;
+          this.servers[index]['lastChecked'] = Date.now();
         }
         // 保存状态到本地
         this.saveStatesToCache();
       } catch (error) {
         console.error('检查服务器状态失败:', error);
       } finally {
-        this.$set(this.checkingServers, server._id, false);
+        this.checkingServers[server._id] = false;
       }
     },
     async checkAllServersStatus() {
@@ -1189,7 +1156,7 @@ export default {
         case 'disconnecting':
           return 'warning';
         default:
-          return '';
+          return 'primary';
       }
     },
     // 批量连接离线服务器
@@ -1258,7 +1225,7 @@ export default {
               console.log('心跳初始检查：连接实际有效，修复状态');
               const index = this.servers.findIndex(s => s._id === server._id);
               if (index !== -1) {
-                this.$set(this.servers[index], 'status', 'online');
+                this.servers[index]['status'] = 'online';
               }
             }
           }
@@ -1335,9 +1302,9 @@ export default {
             
             // 如果当前状态不是在线，则更新为在线
             if (this.servers[index].status !== 'online') {
-              this.$set(this.servers[index], 'status', 'online');
-              this.$set(this.servers[index], 'lastChecked', Date.now());
-              this.$delete(this.errorReasons, server._id);
+              this.servers[index]['status'] = 'online';
+              this.servers[index]['lastChecked'] = Date.now();
+              delete this.errorReasons[server._id];
               
               // 显示状态修复通知
               this.$message.info(`服务器 ${server.name} 状态已自动修复为在线`);
@@ -1354,8 +1321,8 @@ export default {
       // 如果无法确认实际状态或确实无效，则执行原有逻辑
       if (this.servers[index].status === 'online') {
         // 更新服务器状态为错误
-        this.$set(this.servers[index], 'status', 'error');
-        this.$set(this.errorReasons, server._id, '心跳检测失败，可能是服务器重启或网络问题');
+        this.servers[index]['status'] = 'error';
+        this.errorReasons[server._id] = '心跳检测失败，可能是服务器重启或网络问题';
         
         // 提示用户
         const errorMsg = `服务器 ${server.name} 连接异常，心跳检测失败`;
@@ -1423,14 +1390,14 @@ export default {
             // 先更新本地状态为"连接中"
             const index = this.servers.findIndex(s => s._id === server._id);
             if (index !== -1) {
-              this.$set(this.servers[index], 'status', 'connecting');
+              this.servers[index]['status'] = 'connecting';
             }
             
             // 清除错误原因
-            this.$set(this.errorReasons, server._id, null);
+            this.errorReasons[server._id] = null;
             
             // 设置连接中状态
-            this.$set(this.connectingServers, server._id, true);
+            this.connectingServers[server._id] = true;
             
             // 执行连接操作
             await this.connectServer(server._id);
@@ -1449,15 +1416,15 @@ export default {
             
             // 记录错误原因
             const errorMsg = this.parseErrorMessage(error);
-            this.$set(this.errorReasons, server._id, errorMsg);
+            this.errorReasons[server._id] = errorMsg;
             
             // 更新服务器状态
             const index = this.servers.findIndex(s => s._id === server._id);
             if (index !== -1) {
-              this.$set(this.servers[index], 'status', 'error');
+              this.servers[index]['status'] = 'error';
             }
           } finally {
-            this.$set(this.connectingServers, server._id, false);
+            this.connectingServers[server._id] = false;
           }
         }, 1000);
       } catch (error) {
@@ -1585,7 +1552,7 @@ export default {
     // 强制检查服务器状态并确保UI更新
     async forceCheckServerStatus(server) {
       try {
-        this.$set(this.checkingServers, server._id, true);
+        this.checkingServers[server._id] = true;
         
         // 增加延迟，确保后端状态已更新
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -1613,19 +1580,19 @@ export default {
           const index = this.servers.findIndex(s => s._id === server._id);
           if (index !== -1) {
             const oldStatus = this.servers[index].status;
-            this.$set(this.servers[index], 'status', 'online');
-            this.$set(this.servers[index], 'lastChecked', Date.now());
+            this.servers[index]['status'] = 'online';
+            this.servers[index]['lastChecked'] = Date.now();
             
             if (oldStatus !== 'online') {
-              this.$set(this.servers[index], 'statusChanged', true);
-              this.$delete(this.errorReasons, server._id);
+              this.servers[index]['statusChanged'] = true;
+              delete this.errorReasons[server._id];
               
               // 启动心跳检测
               this.startHeartbeat(this.servers[index]);
               
               // 2秒后移除高亮效果
               setTimeout(() => {
-                this.$set(this.servers[index], 'statusChanged', false);
+                this.servers[index]['statusChanged'] = false;
               }, 2000);
               
               this.$message.success(`服务器 ${server.name} 实际连接正常，状态已更新为在线`);
@@ -1676,19 +1643,19 @@ export default {
         const index = this.servers.findIndex(s => s._id === server._id);
         if (index !== -1) {
           const oldStatus = this.servers[index].status;
-          this.$set(this.servers[index], 'status', actualStatus);
-          this.$set(this.servers[index], 'lastChecked', Date.now());
+          this.servers[index]['status'] = actualStatus;
+          this.servers[index]['lastChecked'] = Date.now();
           
           // 如果状态发生变化，添加高亮效果
           if (oldStatus !== actualStatus) {
-            this.$set(this.servers[index], 'statusChanged', true);
+            this.servers[index]['statusChanged'] = true;
             
             // 如果连接失败，更新错误原因
             if (actualStatus === 'error') {
-              this.$set(this.errorReasons, server._id, '连接状态检查显示连接失败，请检查服务器日志');
+              this.errorReasons[server._id] = '连接状态检查显示连接失败，请检查服务器日志';
             } else if (actualStatus === 'online') {
               // 如果为在线状态，清除错误
-              this.$delete(this.errorReasons, server._id);
+              delete this.errorReasons[server._id];
               
               // 启动心跳检测
               this.startHeartbeat(this.servers[index]);
@@ -1696,7 +1663,7 @@ export default {
             
             // 2秒后移除高亮效果
             setTimeout(() => {
-              this.$set(this.servers[index], 'statusChanged', false);
+              this.servers[index]['statusChanged'] = false;
             }, 2000);
           }
           
@@ -1718,7 +1685,7 @@ export default {
         console.error('强制检查服务器状态失败:', error);
         return 'error';
       } finally {
-        this.$set(this.checkingServers, server._id, false);
+        this.checkingServers[server._id] = false;
       }
     },
     
@@ -1746,9 +1713,9 @@ export default {
                 // 强制更新状态为在线
                 const index = this.servers.findIndex(s => s._id === server._id);
                 if (index !== -1) {
-                  this.$set(this.servers[index], 'status', 'online');
-                  this.$set(this.servers[index], 'lastChecked', Date.now());
-                  this.$delete(this.errorReasons, server._id);
+                  this.servers[index]['status'] = 'online';
+                  this.servers[index]['lastChecked'] = Date.now();
+                  delete this.errorReasons[server._id];
                   
                   // 启动心跳检测
                   this.startHeartbeat(this.servers[index]);
@@ -1819,9 +1786,9 @@ export default {
               // 更新状态为在线
               const index = this.servers.findIndex(s => s._id === server._id);
               if (index !== -1) {
-                this.$set(this.servers[index], 'status', 'online');
-                this.$set(this.servers[index], 'lastChecked', Date.now());
-                this.$delete(this.errorReasons, server._id);
+                this.servers[index]['status'] = 'online';
+                this.servers[index]['lastChecked'] = Date.now();
+                delete this.errorReasons[server._id];
                 
                 // 启动心跳检测
                 this.startHeartbeat(this.servers[index]);
@@ -1854,8 +1821,8 @@ export default {
             // 更新状态为在线
             const index = this.servers.findIndex(s => s._id === server._id);
             if (index !== -1) {
-              this.$set(this.servers[index], 'status', 'online');
-              this.$set(this.servers[index], 'lastChecked', Date.now());
+              this.servers[index]['status'] = 'online';
+              this.servers[index]['lastChecked'] = Date.now();
               
               // 启动心跳检测
               this.startHeartbeat(this.servers[index]);

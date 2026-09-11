@@ -36,41 +36,30 @@ const actions = {
       commit('SET_TOKEN', null);
       commit('SET_USER', null);
       localStorage.removeItem('token');
+      delete axios.defaults.headers.common.Authorization;
       throw error;
     } finally {
       commit('SET_LOADING', false);
     }
   },
   
-  /**
-   * 注册功能 - 仅供API调用，前端不使用
-   * 保留此代码以便将来通过API工具或后台管理使用
-   */
-  async register({ commit, dispatch }, credentials) {
+  // Administrator-only account creation must not replace the current session.
+  async register({ commit }, credentials) {
     commit('SET_LOADING', true);
     try {
-      const response = await axios.post('/api/auth/register', credentials);
-      const { token, user } = response.data.data;
-      
-      // 存储令牌到本地存储和状态
-      localStorage.setItem('token', token);
-      commit('SET_TOKEN', token);
-      commit('SET_USER', user);
-      
-      // 设置全局认证头
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      
-      return response;
-    } catch (error) {
-      commit('SET_TOKEN', null);
-      commit('SET_USER', null);
-      localStorage.removeItem('token');
-      throw error;
+      return await axios.post('/api/auth/register', credentials);
     } finally {
       commit('SET_LOADING', false);
     }
   },
-  
+
+  setSession({ commit }, { token, user }) {
+    localStorage.setItem('token', token);
+    commit('SET_TOKEN', token);
+    commit('SET_USER', user);
+    axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+  },
+
   // 获取当前用户信息
   async getCurrentUser({ commit, state }) {
     if (!state.token) return;
