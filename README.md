@@ -2,9 +2,8 @@
 
 基于Nftato.sh脚本开发的可视化多服务器防火墙规则管理面板，支持通过SSH远程连接管理多台服务器的nftables规则。
 
-> 前端现在也不是很满意，但是，也就这样了（能用）
-> 另外关于测试用例覆盖啥的将就吧，精力不够，还是能用就行了
-> 有能力的自己二开吧，虽然代码像坨屎，能跑就行...
+项目采用模块化单体架构：前后端可一起部署，核心职责按页面领域、SSH 生命周期、
+命令执行和远程脚本协议拆分，并通过单元、浏览器和真实 nftables 集成测试守住兼容性。
 
 ## 功能特色
 
@@ -57,6 +56,9 @@ AUTOMATED=yes NFTATO_WEB_PORTS=3001,8443 bash Nftato.sh 20
 - **前端**：Vue.js 3、Element Plus、Vite、Axios、Vuex状态管理
 - **通信**：RESTful API、带身份校验的 Socket.IO
 - **认证**：基于JWT的用户认证系统
+
+核心模块边界、SSH 重试与变更队列、远程脚本协议及扩展约束见
+[架构说明](docs/architecture.md)。
 
 ## 系统要求
 
@@ -147,6 +149,18 @@ wget -N https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato
 ./Nftato.sh
 ```
 
+自动化调用既支持原有数字参数，也支持更清晰的命名命令：
+
+```sh
+./Nftato.sh outbound:block-ports 25,465
+./Nftato.sh inbound:allow-ports 80,443
+./Nftato.sh --json ddos:status
+```
+
+Shell 开发源码位于 `scripts/nftato-src/`。修改模块后运行
+`npm run build:nftato` 生成独立下载版和服务端部署版；
+`npm run check:nftato` 用于检查两个生成物是否同步。
+
 ## 免责声明
 
 * 此项目开发目的为本人自用，因此本人不能保证向后兼容性。
@@ -160,5 +174,3 @@ MIT License
 
 ## Stargazers over time
 [![Stargazers over time](https://starchart.cc/Fiftonb/Gnftato.svg?variant=adaptive)](https://starchart.cc/Fiftonb/Gnftato)
-
-
