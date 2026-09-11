@@ -19,9 +19,9 @@ Yellow_font_prefix="\033[33m"
 
 # 检查是否在自动化模式下运行
 is_automated=0
-if [ "$AUTOMATED" = "yes" ] || [ "$AUTOMATED" = "true" ] || [ "$AUTOMATED" = "1" ]; then
+if [ "${AUTOMATED:-}" = "yes" ] || [ "${AUTOMATED:-}" = "true" ] || [ "${AUTOMATED:-}" = "1" ]; then
     is_automated=1
-    echo -e "${Info} 检测到自动化模式，将跳过交互式操作"
+    [[ "${1:-}" == "--json" ]] || echo -e "${Info} 检测到自动化模式，将跳过交互式操作"
 fi
 
 # 读取用户输入，带自动化模式支持
@@ -72,8 +72,14 @@ sandai
 Thunder
 XLLiveUD"
 
-# 检查root权限
-[[ $EUID -ne 0 ]] && echo -e "${Error} 必须使用root用户运行此脚本！\n" && exit 1
+# Root is required for firewall operations. The check is performed by the CLI
+# entrypoint so `--help` and source-level tests stay side-effect free.
+require_root() {
+    if [[ $EUID -ne 0 ]]; then
+        echo -e "${Error} 必须使用root用户运行此脚本！\n" >&2
+        return 1
+    fi
+}
 
 # 系统检测函数
 check_system() {
@@ -364,6 +370,7 @@ reset_nftato_tables() {
 }
 
 # 设置nftables基础结构
+# shellcheck shell=bash
 setup_nftables_base() {
     local rules_file web_port
     local web_ports
@@ -557,6 +564,7 @@ display_ssh() {
 
 # 出网端口控制函数
 # 显示已封禁的出网端口
+# shellcheck shell=bash
 display_out_port() {
     # 检索出网端口封禁规则
     tcp_block_rules=$(nft -a list chain inet filter output | grep "出网端口封禁TCP")
@@ -645,24 +653,31 @@ input_disable_want_outport() {
 }
 
 # 设置出网端口规则
+delete_filter_rule_lines() {
+    local rule_lines=${1:-} line handle
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        handle=$(grep -o 'handle [0-9]*' <<<"$line" | awk '{print $2}')
+        if [[ -n "$handle" ]]; then
+            nft delete rule inet filter "${2:?missing chain}" handle "$handle" || return 1
+        fi
+    done <<<"$rule_lines"
+}
+
 set_out_ports() {
     # 转换端口格式，处理连续端口段（从n:m转为n-m）
     PORT=${PORT//:/-}
 
     # 处理TCP协议
     if [[ "$s" == "add" ]]; then
-        nft add rule inet filter output tcp dport { $PORT } reject comment \"出网端口封禁TCP\"
-        nft add rule inet filter output udp dport { $PORT } drop comment \"出网端口封禁UDP\"
+        nft add rule inet filter output tcp dport { $PORT } reject comment \"出网端口封禁TCP\" || return 1
+        nft add rule inet filter output udp dport { $PORT } drop comment \"出网端口封禁UDP\" || return 1
     elif [[ "$s" == "delete" ]]; then
         # 查找并删除匹配的规则
         # 修改搜索模式以确保找到正确的规则
         # 更新后的代码应该是：
-        nft -a list chain inet filter output | grep "dport.*$PORT" | grep -i "出网端口封禁TCP\|出网端口封禁UDP" | while read -r line; do
-            handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
-            if [ -n "$handle" ]; then
-                nft delete rule inet filter output handle $handle
-            fi
-        done
+        matching_rules=$(nft -a list chain inet filter output | grep "dport.*$PORT" | grep -i "出网端口封禁TCP\|出网端口封禁UDP" || true)
+        delete_filter_rule_lines "$matching_rules" output || return 1
     fi
 
     save_nftables_rules
@@ -833,15 +848,13 @@ set_out_keywords() {
         USE_FILE_ONLY=0
     fi
 
-    key_word_num=$(echo -e "${key_word}" | wc -l)
-    for ((integer = 1; integer <= ${key_word_num}; integer++)); do
-        i=$(echo -e "${key_word}" | sed -n "${integer}p")
+    while IFS= read -r i || [[ -n "$i" ]]; do
         if [[ -n "$i" ]]; then
             if [[ "$s" == "add" ]]; then
                 # 记录关键词到本地文件以便管理
                 # 先检查关键词是否已存在
-                if [ -f "$keywords_file" ] && grep -q "^$i$" "$keywords_file"; then
-                    echo "关键词【$i】已在封禁列表中，跳过"
+                if [ -f "$keywords_file" ] && grep -Fxq -- "$i" "$keywords_file"; then
+                    echo "关键词【${i}】已在封禁列表中，跳过"
                     continue
                 fi
 
@@ -850,40 +863,40 @@ set_out_keywords() {
                 # 根据可用模块选择过滤实现方式
                 if [[ $USE_FILE_ONLY -eq 1 ]]; then
                     # 只添加注释信息，不实际过滤
-                    echo "已添加关键词【$i】到封禁列表（仅记录模式，未实际过滤）"
+                    echo "已添加关键词【${i}】到封禁列表（仅记录模式，未实际过滤）"
                 else
                     # 使用iptables的string模块在mangle表中添加过滤规则
-                    iptables -t mangle -A OUTPUT -m string --string "$i" --algo bm --to 65535 -j DROP
-                    echo "已使用iptables添加关键词【$i】过滤规则"
+                    iptables -t mangle -A OUTPUT -m string --string "$i" --algo bm --to 65535 -j DROP || return 1
+                    echo "已使用iptables添加关键词【${i}】过滤规则"
                 fi
             elif [[ "$s" == "delete" ]]; then
                 # 从关键词文件中移除
                 if [ -f "$keywords_file" ]; then
-                    sed -i "/^$i$/d" "$keywords_file"
+                    keyword_file_stage=$(mktemp "${keywords_file}.XXXXXX") || return 1
+                    while IFS= read -r saved_keyword || [[ -n "$saved_keyword" ]]; do
+                        [[ "$saved_keyword" == "$i" ]] || printf '%s\n' "$saved_keyword" >>"$keyword_file_stage"
+                    done <"$keywords_file"
+                    if ! mv -f -- "$keyword_file_stage" "$keywords_file"; then
+                        rm -f -- "$keyword_file_stage"
+                        return 1
+                    fi
                 fi
 
-                # 查找并删除匹配的iptables规则
+                # 使用与添加时完全相同的参数检查并删除规则。关键词始终
+                # 作为单独参数传递，因此空格、撇号和 URL 字符不会被解释。
                 if [[ $USE_FILE_ONLY -eq 0 ]]; then
-                    # 使用临时文件保存当前规则
-                    iptables-save >/tmp/iptables_rules.tmp
+                    while iptables -t mangle -C OUTPUT -m string --string "$i" --algo bm --to 65535 -j DROP 2>/dev/null; do
+                        iptables -t mangle -D OUTPUT -m string --string "$i" --algo bm --to 65535 -j DROP || return 1
+                    done
 
-                    # 修改临时文件，删除包含特定关键词的行
-                    sed -i "/\-A OUTPUT \-m string \-\-string \"$i\" \-\-algo bm \-\-to 65535 \-j DROP/d" /tmp/iptables_rules.tmp
-
-                    # 重新加载修改后的规则
-                    iptables-restore </tmp/iptables_rules.tmp
-
-                    # 删除临时文件
-                    rm -f /tmp/iptables_rules.tmp
-
-                    echo "已解除关键词【$i】的封禁"
+                    echo "已解除关键词【${i}】的封禁"
                 fi
             fi
         fi
-    done
+    done <<<"$key_word"
 
     # 保存iptables规则
-    save_iptables_rules
+    save_iptables_rules || return 1
 }
 
 # 检测过滤模式并显示状态
@@ -927,18 +940,18 @@ save_iptables_rules() {
         echo "保存iptables规则..."
         if [ "$release" == "debian" ] || [ "$release" == "ubuntu" ]; then
             # 确保目录存在
-            mkdir -p /etc/iptables
-            iptables-save >/etc/iptables/rules.v4
+            mkdir -p /etc/iptables || return 1
+            iptables-save >/etc/iptables/rules.v4 || return 1
 
             # 创建网络接口启动时自动加载规则的脚本
             if [ ! -f "/etc/network/if-pre-up.d/iptables" ]; then
-                mkdir -p /etc/network/if-pre-up.d
+                mkdir -p /etc/network/if-pre-up.d || return 1
                 cat >/etc/network/if-pre-up.d/iptables <<-EOF
 #!/bin/bash
 /sbin/iptables-restore < /etc/iptables/rules.v4
 exit 0
 EOF
-                chmod +x /etc/network/if-pre-up.d/iptables
+                chmod +x /etc/network/if-pre-up.d/iptables || return 1
             fi
 
             # 对于systemd系统，也创建service文件
@@ -957,17 +970,17 @@ RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 EOF
-                systemctl daemon-reload
-                systemctl enable iptables-restore.service
+                systemctl daemon-reload || return 1
+                systemctl enable iptables-restore.service || return 1
             fi
         elif [ "$release" == "centos" ]; then
             # 检查是否有service命令
             if command -v service &>/dev/null; then
-                service iptables save
+                service iptables save || return 1
             else
                 # 如果没有service命令，手动保存
-                mkdir -p /etc/sysconfig
-                iptables-save >/etc/sysconfig/iptables
+                mkdir -p /etc/sysconfig || return 1
+                iptables-save >/etc/sysconfig/iptables || return 1
 
                 # 对于CentOS系统，创建service文件
                 if [ -d "/etc/systemd/system" ]; then
@@ -985,8 +998,8 @@ RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 EOF
-                    systemctl daemon-reload
-                    systemctl enable iptables-restore.service
+                    systemctl daemon-reload || return 1
+                    systemctl enable iptables-restore.service || return 1
                 fi
             fi
         fi
@@ -1044,7 +1057,7 @@ able_all_keyworld_out() {
             # 使用计数器方式删除规则，直到没有匹配规则为止
             while iptables -t mangle -L OUTPUT | grep -q "STRING"; do
                 # 始终删除第一条规则（因为规则号会变化）
-                iptables -t mangle -D OUTPUT 1
+                iptables -t mangle -D OUTPUT 1 || return 1
             done
 
             echo "iptables字符串匹配规则已删除"
@@ -1054,7 +1067,7 @@ able_all_keyworld_out() {
         >"$keywords_file"
 
         # 保存更改后的iptables规则
-        save_iptables_rules
+        save_iptables_rules || return 1
 
         display_out_keyworld
         echo -e "${Info} 已解封所有关键词 !"
@@ -1074,8 +1087,8 @@ view_all_disable_out() {
 # 封禁BT/PT/SPAM相关函数
 # 封禁所有敏感服务
 disable_all_out() {
-    disable_btpt
-    disable_spam
+    disable_btpt || return 1
+    disable_spam || return 1
 }
 
 # 封禁BT/PT
@@ -1086,7 +1099,7 @@ disable_btpt() {
     fi
 
     s="add"
-    set_bt
+    set_bt || return 1
     echo -e "${Info} 已封禁BT、PT 关键词 !"
 }
 
@@ -1103,7 +1116,7 @@ disable_spam() {
     [[ $spam_banned -gt 0 ]] && echo -e "${Error} 检测到已封禁SPAM(垃圾邮件) 端口，无需再次封禁 !" && exit 0
 
     s="add"
-    set_spam
+    set_spam || return 1
     echo -e "${Info} 已封禁SPAM(垃圾邮件) 端口 !"
 }
 
@@ -1113,16 +1126,12 @@ set_spam() {
     all_spam_ports="${smtp_port},${pop3_port},${imap_port},${other_port}"
 
     if [[ "$s" == "add" ]]; then
-        nft add rule inet filter output tcp dport { $all_spam_ports } reject comment \"SPAM端口封禁TCP\"
-        nft add rule inet filter output udp dport { $all_spam_ports } drop comment \"SPAM端口封禁UDP\"
+        nft add rule inet filter output tcp dport { $all_spam_ports } reject comment \"SPAM端口封禁TCP\" || return 1
+        nft add rule inet filter output udp dport { $all_spam_ports } drop comment \"SPAM端口封禁UDP\" || return 1
     elif [[ "$s" == "delete" ]]; then
         # 删除SPAM相关规则
-        nft -a list chain inet filter output | grep "SPAM端口封禁" | while read -r line; do
-            handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
-            if [ -n "$handle" ]; then
-                nft delete rule inet filter output handle $handle
-            fi
-        done
+        matching_rules=$(nft -a list chain inet filter output | grep "SPAM端口封禁" || true)
+        delete_filter_rule_lines "$matching_rules" output || return 1
     fi
 
     save_nftables_rules
@@ -1131,8 +1140,8 @@ set_spam() {
 # 解封BT/PT/SPAM相关函数
 # 解封所有封禁
 able_all_out() {
-    able_btpt
-    able_spam
+    able_btpt || return 1
+    able_spam || return 1
 }
 
 # 解封BT/PT
@@ -1143,7 +1152,7 @@ able_btpt() {
     fi
 
     s="delete"
-    set_bt
+    set_bt || return 1
     echo -e "${Info} 已解封BT、PT 关键词 !"
 }
 
@@ -1154,7 +1163,7 @@ able_spam() {
     [[ $spam_banned -eq 0 ]] && echo -e "${Error} 检测到未封禁SPAM(垃圾邮件) 端口，请检查 !" && exit 0
 
     s="delete"
-    set_spam
+    set_spam || return 1
     echo -e "${Info} 已解封SPAM(垃圾邮件) 端口 !"
 }
 
@@ -1165,18 +1174,21 @@ diable_blocklist_out() {
     blocklist=$(wget --no-check-certificate -t3 -T5 -qO- "https://raw.githubusercontent.com/Aipblock/saveblocklist/main/block.txt")
 
     if [[ -z ${blocklist} ]]; then
-        echo -e "${Error} 网络文件内容为空或访问超时 !" && display_out_keyworld && exit 0
+        echo -e "${Error} 网络文件内容为空或访问超时 !"
+        display_out_keyworld
+        return 1
     fi
 
     # 使用现有的关键词过滤机制处理blocklist中的每一行
     key_word="${blocklist}"
-    set_out_keywords
+    set_out_keywords || return 1
 
     echo -e "成功执行" && echo
 }
 
 # 入网端口控制函数
 # 显示已放行的入网端口
+# shellcheck shell=bash
 display_in_port() {
     # 检索入网端口规则
     tcp_rules=$(nft -a list chain inet filter input | grep "dport" | grep "tcp" | grep "shellsettcp")
@@ -1291,8 +1303,8 @@ set_in_ports() {
         fi
 
         # 添加新规则
-        nft add rule inet filter input tcp dport { $PORT } accept comment \"shellsettcp\"
-        nft add rule inet filter input udp dport { $PORT } accept comment \"shellsetudp\"
+        nft add rule inet filter input tcp dport { $PORT } accept comment \"shellsettcp\" || return 1
+        nft add rule inet filter input udp dport { $PORT } accept comment \"shellsetudp\" || return 1
     elif [[ "$s" == "delete" ]]; then
         # 先列出所有包含该端口的规则
         tcp_rules=$(nft -a list chain inet filter input | grep -E "tcp dport (\\{[^}]*${PORT}[^}]*\\}|${PORT})" | grep "shellsettcp")
@@ -1305,20 +1317,10 @@ set_in_ports() {
         fi
 
         # 删除TCP规则
-        echo "$tcp_rules" | while read -r line; do
-            handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
-            if [ -n "$handle" ]; then
-                nft delete rule inet filter input handle $handle
-            fi
-        done
+        delete_filter_rule_lines "$tcp_rules" input || return 1
 
         # 删除UDP规则
-        echo "$udp_rules" | while read -r line; do
-            handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
-            if [ -n "$handle" ]; then
-                nft delete rule inet filter input handle $handle
-            fi
-        done
+        delete_filter_rule_lines "$udp_rules" input || return 1
     fi
 
     save_nftables_rules
@@ -1428,29 +1430,21 @@ set_in_ips() {
             # 判断IPv4或IPv6
             if [[ $ip == *":"* ]]; then
                 # IPv6地址
-                nft add rule inet filter input ip6 saddr $ip accept comment \"shellsetip\"
+                nft add rule inet filter input ip6 saddr "$ip" accept comment \"shellsetip\" || return 1
             else
                 # IPv4地址
-                nft add rule inet filter input ip saddr $ip accept comment \"shellsetip\"
+                nft add rule inet filter input ip saddr "$ip" accept comment \"shellsetip\" || return 1
             fi
         elif [[ "$s" == "delete" ]]; then
             # 删除匹配的规则
             if [[ $ip == *":"* ]]; then
                 # IPv6地址
-                nft -a list chain inet filter input | grep "ip6 saddr $ip" | grep "shellsetip" | while read -r line; do
-                    handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
-                    if [ -n "$handle" ]; then
-                        nft delete rule inet filter input handle $handle
-                    fi
-                done
+                matching_rules=$(nft -a list chain inet filter input | grep -F "ip6 saddr $ip" | grep "shellsetip" || true)
+                delete_filter_rule_lines "$matching_rules" input || return 1
             else
                 # IPv4地址
-                nft -a list chain inet filter input | grep "ip saddr $ip" | grep "shellsetip" | while read -r line; do
-                    handle=$(echo "$line" | grep -o "handle [0-9]*" | awk '{print $2}')
-                    if [ -n "$handle" ]; then
-                        nft delete rule inet filter input handle $handle
-                    fi
-                done
+                matching_rules=$(nft -a list chain inet filter input | grep -F "ip saddr $ip" | grep "shellsetip" || true)
+                delete_filter_rule_lines "$matching_rules" input || return 1
             fi
         fi
     done
@@ -1467,6 +1461,7 @@ clear_rebuild_ipta() {
 }
 
 # 检查网络环境
+# shellcheck shell=bash
 check_network_env() {
     # 检测是否能连接到Google，判断是否在国内网络
     ping -c2 -i0.3 -W1 www.google.com &>/dev/null
@@ -1489,76 +1484,76 @@ setup_ddos_protection() {
     # 检查是否已配置防御规则
     if nft list tables | grep -q "edge_dft_v4"; then
         echo -e "${Yellow_font_prefix}[警告]${Font_color_suffix} 检测到已存在DDoS防御规则，将先清除旧规则"
-        nft delete table ip edge_dft_v4 2>/dev/null
-        nft delete table ip6 edge_dft_v6 2>/dev/null
+        nft delete table ip edge_dft_v4 2>/dev/null || return 1
+        nft delete table ip6 edge_dft_v6 2>/dev/null || true
     fi
 
     # 创建IPv4防御表和集合
-    nft add table ip edge_dft_v4
-    nft add set ip edge_dft_v4 allow_set { type ipv4_addr\; flags timeout\; }
-    nft add set ip edge_dft_v4 deny_set { type ipv4_addr\; size 65535\; flags timeout\; }
+    nft add table ip edge_dft_v4 || return 1
+    nft add set ip edge_dft_v4 allow_set { type ipv4_addr\; flags timeout\; } || return 1
+    nft add set ip edge_dft_v4 deny_set { type ipv4_addr\; size 65535\; flags timeout\; } || return 1
 
     # 创建基础输入链
-    nft add chain ip edge_dft_v4 input { type filter hook input priority 0\; policy accept\; }
+    nft add chain ip edge_dft_v4 input { type filter hook input priority 0\; policy accept\; } || return 1
 
     # 添加基本规则
-    nft add rule ip edge_dft_v4 input iifname "lo" accept
-    nft add rule ip edge_dft_v4 input ip saddr @allow_set accept
-    nft add rule ip edge_dft_v4 input ip saddr @deny_set drop
+    nft add rule ip edge_dft_v4 input iifname "lo" accept || return 1
+    nft add rule ip edge_dft_v4 input ip saddr @allow_set accept || return 1
+    nft add rule ip edge_dft_v4 input ip saddr @deny_set drop || return 1
 
     # 添加SSH防暴力破解规则
     get_ssh_port
-    nft add rule ip edge_dft_v4 input tcp dport $PORT ct state new limit rate 15/minute log prefix \"New SSH connection: \" counter accept comment \"Avoid brute force on SSH\"
+    nft add rule ip edge_dft_v4 input tcp dport "$PORT" ct state new limit rate 15/minute log prefix \"New SSH connection: \" counter accept comment \"Avoid brute force on SSH\" || return 1
 
     # 添加HTTP防御规则
-    nft add rule ip edge_dft_v4 input tcp dport http ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnections_100000ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport http meter meter-ip-80-max-connections size 65535 { ip saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport http ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnections_100000ZZ\" || return 1
+    nft add rule ip edge_dft_v4 input tcp dport http meter meter-ip-80-max-connections size 65535 { ip saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnectionsPerIP_600ZZ\" || return 1
+    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\" || return 1
+    nft add rule ip edge_dft_v4 input tcp dport http ct state new meter meter-ip-80-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\" || return 1
 
     # 添加HTTPS防御规则
-    nft add rule ip edge_dft_v4 input tcp dport https ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnections_100000ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport https meter meter-ip-443-max-connections size 65535 { ip saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip edge_dft_v4 input tcp dport https ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnections_100000ZZ\" || return 1
+    nft add rule ip edge_dft_v4 input tcp dport https meter meter-ip-443-max-connections size 65535 { ip saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnectionsPerIP_600ZZ\" || return 1
+    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-rate size 65535 { ip saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\" || return 1
+    nft add rule ip edge_dft_v4 input tcp dport https ct state new meter meter-ip-443-new-connections-secondly-rate size 65535 { ip saddr limit rate over 300/second burst 303 packets} add @deny_set { ip saddr timeout 24h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\" || return 1
 
     # 配置IPv6防御规则
-    setup_ipv6_ddos_protection
+    setup_ipv6_ddos_protection || return 1
 
-    save_nftables_rules
+    save_nftables_rules || return 1
     echo -e "${Green_font_prefix}[成功]${Font_color_suffix} DDoS防御规则已配置完成!"
 }
 
 # 设置IPv6 DDoS防御
 setup_ipv6_ddos_protection() {
     # 创建IPv6防御表和集合
-    nft add table ip6 edge_dft_v6
-    nft add set ip6 edge_dft_v6 allow_set { type ipv6_addr\; flags timeout\; }
-    nft add set ip6 edge_dft_v6 deny_set { type ipv6_addr\; size 65535\; flags timeout\; }
+    nft add table ip6 edge_dft_v6 || return 1
+    nft add set ip6 edge_dft_v6 allow_set { type ipv6_addr\; flags timeout\; } || return 1
+    nft add set ip6 edge_dft_v6 deny_set { type ipv6_addr\; size 65535\; flags timeout\; } || return 1
 
     # 创建基础输入链
-    nft add chain ip6 edge_dft_v6 input { type filter hook input priority 0\; policy accept\; }
+    nft add chain ip6 edge_dft_v6 input { type filter hook input priority 0\; policy accept\; } || return 1
 
     # 添加基本规则
-    nft add rule ip6 edge_dft_v6 input iifname "lo" accept
-    nft add rule ip6 edge_dft_v6 input ip6 saddr @allow_set accept
-    nft add rule ip6 edge_dft_v6 input ip6 saddr @deny_set drop
+    nft add rule ip6 edge_dft_v6 input iifname "lo" accept || return 1
+    nft add rule ip6 edge_dft_v6 input ip6 saddr @allow_set accept || return 1
+    nft add rule ip6 edge_dft_v6 input ip6 saddr @deny_set drop || return 1
 
     # 添加SSH防暴力破解规则
     get_ssh_port
-    nft add rule ip6 edge_dft_v6 input tcp dport $PORT ct state new limit rate 15/minute log prefix \"New SSH connection: \" counter packets 0 bytes 0 accept comment \"Avoid brute force on SSH\"
+    nft add rule ip6 edge_dft_v6 input tcp dport "$PORT" ct state new limit rate 15/minute log prefix \"New SSH connection: \" counter packets 0 bytes 0 accept comment \"Avoid brute force on SSH\" || return 1
 
     # 添加HTTP防御规则
-    nft add rule ip6 edge_dft_v6 input tcp dport http ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnections_100000ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport http meter meter-ip6-80-max-connections size 65535 { ip6 saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport http ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnections_100000ZZ\" || return 1
+    nft add rule ip6 edge_dft_v6 input tcp dport http meter meter-ip6-80-max-connections size 65535 { ip6 saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_80_maxConnectionsPerIP_600ZZ\" || return 1
+    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_80_newConnectionsRate_500_86400ZZ\" || return 1
+    nft add rule ip6 edge_dft_v6 input tcp dport http ct state new meter meter-ip6-80-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_80_newConnectionsSecondlyRate_300_86400ZZ\" || return 1
 
     # 添加HTTPS防御规则
-    nft add rule ip6 edge_dft_v6 input tcp dport https ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnections_100000ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport https meter meter-ip6-443-max-connections size 65535 { ip6 saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnectionsPerIP_600ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\"
-    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\"
+    nft add rule ip6 edge_dft_v6 input tcp dport https ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnections_100000ZZ\" || return 1
+    nft add rule ip6 edge_dft_v6 input tcp dport https meter meter-ip6-443-max-connections size 65535 { ip6 saddr ct count over 600 } counter packets 0 bytes 0 drop comment \"ZZtcp_443_maxConnectionsPerIP_600ZZ\" || return 1
+    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-rate size 65535 { ip6 saddr limit rate over 500/minute burst 603 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_443_newConnectionsRate_500_86400ZZ\" || return 1
+    nft add rule ip6 edge_dft_v6 input tcp dport https ct state new meter meter-ip6-443-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over 300/second burst 303 packets} add @deny_set { ip6 saddr timeout 24h } comment \"ZZtcp_443_newConnectionsSecondlyRate_300_86400ZZ\" || return 1
 }
 
 # 自定义端口DDoS防御
@@ -2031,6 +2026,7 @@ view_defense_status() {
 }
 
 # 更新脚本
+# shellcheck shell=bash
 Update_Shell() {
     # 检测网络环境
     check_network_env
@@ -2047,8 +2043,11 @@ Update_Shell() {
     fi
 
     # 获取最新版本号
-    sh_new_ver=$(wget --no-check-certificate -qO- -t2 -T3 "${VERSION_URL}" | grep 'sh_ver="' | awk -F "=" '{print $NF}' | sed 's/\"//g' | head -1)
-    [[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法连接到更新服务器，请检查网络或稍后再试！" && exit 0
+    sh_new_ver=$(wget -qO- -t2 -T3 "${VERSION_URL}" | grep 'sh_ver="' | awk -F "=" '{print $NF}' | sed 's/\"//g' | head -1)
+    if [[ -z ${sh_new_ver} ]]; then
+        echo -e "${Error} 无法连接到更新服务器，请检查网络或稍后再试！"
+        return 1
+    fi
 
     # 比较版本
     if [[ "${sh_new_ver}" != "${sh_ver}" ]]; then
@@ -2056,13 +2055,14 @@ Update_Shell() {
         yn="y"
         echo -e "自动确认更新"
         if [[ ${yn} == [Yy] ]]; then
-            wget -N --no-check-certificate ${DOWNLOAD_URL} -O Nftato.sh.new
-            if [ $? -eq 0 ]; then
-                mv Nftato.sh.new Nftato.sh
-                chmod +x Nftato.sh
+            if wget -q "${DOWNLOAD_URL}" -O Nftato.sh.new && bash -n Nftato.sh.new; then
+                mv Nftato.sh.new Nftato.sh || return 1
+                chmod +x Nftato.sh || return 1
                 echo -e "脚本已更新为最新版本[ ${sh_new_ver} ] !\n运行 bash Nftato.sh 启动最新版本"
             else
+                rm -f Nftato.sh.new
                 echo -e "${Error} 下载新版本失败，请稍后再试"
+                return 1
             fi
         else
             echo "已取消更新，继续使用当前版本[ ${sh_ver} ]"
@@ -2070,14 +2070,233 @@ Update_Shell() {
     else
         echo -e "当前已经是最新版本[ ${sh_new_ver} ]"
     fi
-    exit 0
+    return 0
+}
+
+# Translate the public, descriptive command names to the historical numeric
+# protocol. Numeric values remain supported for older panels and bookmarks.
+resolve_action() {
+    case "${1:-}" in
+        outbound:list) echo 0 ;;
+        outbound:block-bt) echo 1 ;;
+        outbound:block-spam) echo 2 ;;
+        outbound:block-all) echo 3 ;;
+        outbound:block-ports) echo 4 ;;
+        outbound:block-keyword) echo 5 ;;
+        outbound:unblock-bt) echo 6 ;;
+        outbound:unblock-spam) echo 7 ;;
+        outbound:unblock-all) echo 8 ;;
+        outbound:unblock-ports) echo 9 ;;
+        outbound:unblock-keyword) echo 10 ;;
+        outbound:unblock-keywords) echo 11 ;;
+        outbound:blocklists) echo 12 ;;
+        inbound:list-ports) echo 13 ;;
+        inbound:list-addresses) echo 14 ;;
+        inbound:allow-ports) echo 15 ;;
+        inbound:remove-ports) echo 16 ;;
+        inbound:allow-addresses) echo 17 ;;
+        inbound:remove-addresses) echo 18 ;;
+        ssh:port) echo 19 ;;
+        rules:rebuild) echo 20 ;;
+        self:update) echo 21 ;;
+        ddos:setup) echo 22 ;;
+        ddos:custom-port) echo 23 ;;
+        ddos:ip-list) echo 24 ;;
+        ddos:status) echo 25 ;;
+        banbt) echo 1 ;;
+        banspam) echo 2 ;;
+        banall) echo 3 ;;
+        unbanbt) echo 6 ;;
+        unbanspam) echo 7 ;;
+        unbanall) echo 8 ;;
+        ''|help|-h|--help) echo "${1:-}" ;;
+        * ) echo "$1" ;;
+    esac
+}
+
+validate_port_list() {
+    local value=${1:-} item first last
+    local -a items
+    [[ -n "$value" && ${#value} -le 1024 ]] || return 1
+    [[ "$value" != ,* && "$value" != *, && "$value" != *,,* ]] || return 1
+    IFS=',' read -r -a items <<< "$value"
+    for item in "${items[@]}"; do
+        [[ "$item" =~ ^([0-9]{1,5})([:-]([0-9]{1,5}))?$ ]] || return 1
+        first=${BASH_REMATCH[1]}
+        last=${BASH_REMATCH[3]:-${BASH_REMATCH[1]}}
+        ((10#$first >= 1 && 10#$first <= 65535)) || return 1
+        ((10#$last >= 1 && 10#$last <= 65535 && 10#$first <= 10#$last)) || return 1
+    done
+}
+
+validate_single_port() {
+    local value=${1:-}
+    [[ "$value" =~ ^[0-9]{1,5}$ ]] && ((10#$value >= 1 && 10#$value <= 65535))
+}
+
+validate_keyword() {
+    local value=${1:-}
+    [[ -n "$value" && ${#value} -le 256 ]] || return 1
+    # The value is passed to iptables as one quoted argument and compared to
+    # the on-disk list literally. Allow printable URL/text characters while
+    # rejecting control characters that could create extra records or output.
+    [[ "$value" != *$'\n'* && "$value" != *$'\r'* && "$value" != *$'\t'* ]] || return 1
+    [[ "$value" =~ [^[:space:]] ]] || return 1
+    [[ "$value" =~ ^[[:print:]]+$ ]]
+}
+
+validate_ipv4_address() {
+    local address=${1:-} octet
+    local -a octets
+    IFS='.' read -r -a octets <<< "$address"
+    [[ ${#octets[@]} -eq 4 ]] || return 1
+    for octet in "${octets[@]}"; do
+        [[ "$octet" =~ ^[0-9]{1,3}$ ]] || return 1
+        ((10#$octet >= 0 && 10#$octet <= 255)) || return 1
+    done
+}
+
+validate_ipv6_address() {
+    local address=${1:-} ipv4_part left right side group compressed=0 group_count=0
+    local -a groups
+    [[ "$address" == *:* ]] || return 1
+
+    # An embedded IPv4 tail consumes two IPv6 groups.
+    if [[ "$address" == *.* ]]; then
+        ipv4_part=${address##*:}
+        validate_ipv4_address "$ipv4_part" || return 1
+        address="${address%:*}:0:0"
+    fi
+    [[ "$address" =~ ^[0-9A-Fa-f:]+$ ]] || return 1
+
+    if [[ "$address" == *::* ]]; then
+        compressed=1
+        left=${address%%::*}
+        right=${address#*::}
+        [[ "$right" != *::* ]] || return 1
+        [[ -z "$left" || "$left" != *: ]] || return 1
+        [[ -z "$right" || "$right" != :* ]] || return 1
+    else
+        left=$address
+        right=''
+        [[ "$left" != :* && "$left" != *: ]] || return 1
+    fi
+
+    for side in "$left" "$right"; do
+        [[ -n "$side" ]] || continue
+        IFS=':' read -r -a groups <<< "$side"
+        for group in "${groups[@]}"; do
+            [[ "$group" =~ ^[0-9A-Fa-f]{1,4}$ ]] || return 1
+            group_count=$((group_count + 1))
+        done
+    done
+
+    if [[ $compressed -eq 1 ]]; then
+        ((group_count < 8))
+    else
+        ((group_count == 8))
+    fi
+}
+
+validate_ip_or_cidr() {
+    local value=${1:-} address prefix max_prefix
+    [[ -n "$value" && "$value" != */*/* ]] || return 1
+    if [[ "$value" == */* ]]; then
+        address=${value%/*}
+        prefix=${value##*/}
+        [[ "$prefix" =~ ^[0-9]{1,3}$ ]] || return 1
+    else
+        address=$value
+        prefix=''
+    fi
+
+    if [[ "$address" == *:* ]]; then
+        validate_ipv6_address "$address" || return 1
+        max_prefix=128
+    else
+        validate_ipv4_address "$address" || return 1
+        max_prefix=32
+    fi
+    [[ -z "$prefix" ]] || ((10#$prefix >= 0 && 10#$prefix <= max_prefix))
+}
+
+validate_ip_or_cidr_list() {
+    local value=${1:-} item
+    local -a items
+    [[ -n "$value" && ${#value} -le 1024 ]] || return 1
+    [[ "$value" != ,* && "$value" != *, && "$value" != *,,* ]] || return 1
+    IFS=',' read -r -a items <<< "$value"
+    for item in "${items[@]}"; do
+        validate_ip_or_cidr "$item" || return 1
+    done
+}
+
+validate_integer_range() {
+    local value=${1:-} minimum=$2 maximum=$3
+    [[ "$value" =~ ^[0-9]{1,10}$ ]] || return 1
+    ((10#$value >= minimum && 10#$value <= maximum))
+}
+
+validate_named_invocation() {
+    local command_name=${1:-}
+    shift || true
+    case "$command_name" in
+        outbound:list|outbound:block-bt|outbound:block-spam|outbound:block-all|\
+        outbound:unblock-bt|outbound:unblock-spam|outbound:unblock-all|outbound:unblock-keywords|\
+        outbound:blocklists|inbound:list-ports|inbound:list-addresses|ssh:port|rules:rebuild|\
+        self:update|ddos:setup|ddos:status)
+            [[ $# -eq 0 ]] || { echo "错误: 命名动作 $command_name 不接受参数" >&2; return 1; }
+            ;;
+        outbound:block-ports|outbound:block-keyword|outbound:unblock-ports|outbound:unblock-keyword|\
+        inbound:allow-ports|inbound:remove-ports|inbound:allow-addresses|inbound:remove-addresses)
+            [[ $# -eq 1 && -n "${1:-}" ]] || { echo "错误: 命名动作 $command_name 需要且仅接受一个参数" >&2; return 1; }
+            ;;
+        ddos:custom-port)
+            [[ $# -eq 6 ]] || { echo "错误: 命名动作 $command_name 需要六个参数" >&2; return 1; }
+            ;;
+        ddos:ip-list)
+            [[ $# -ge 2 && $# -le 3 && -n "${1:-}" && -n "${2:-}" ]] || { echo "错误: 命名动作 $command_name 需要操作类型、IP地址及可选有效期" >&2; return 1; }
+            ;;
+    esac
+}
+
+require_valid() {
+    local validator=$1 message=$2
+    shift 2
+    if ! "$validator" "$@"; then
+        echo "错误: $message" >&2
+        return 1
+    fi
+}
+
+json_escape() {
+    local value=${1:-}
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$'\e'/\\u001b}
+    value=${value//$'\t'/\\t}
+    value=${value//$'\r'/\\r}
+    value=${value//$'\n'/\\n}
+    printf '%s' "$value"
+}
+
+emit_json_result() {
+    local command_name=$1 status=$2 output=${3:-}
+    printf '{"success":%s,"command":"%s","exitCode":%d,"output":"%s"}\n' \
+        "$([[ "$status" -eq 0 ]] && printf true || printf false)" \
+        "$(json_escape "$command_name")" "$status" "$(json_escape "$output")"
 }
 
 # 使用方法帮助
 usage() {
-    echo -e "使用方法: $0 [参数] [额外参数]"
+    echo -e "使用方法: $0 [--json] <命令|0-25> [参数]"
     echo -e "参数说明:"
     echo -e "  0-25: 对应菜单中的功能"
+    echo -e "  推荐使用命名命令，例如:"
+    echo -e "    $0 outbound:block-ports 25,465"
+    echo -e "    $0 inbound:allow-ports 80,443"
+    echo -e "    $0 inbound:allow-addresses 192.0.2.10"
+    echo -e "    $0 ddos:status"
     echo -e "需要额外参数的功能:"
     echo -e "  4: 指定要封禁的端口，例如: $0 4 80,443"
     echo -e "  5: 指定要封禁的关键词，例如: $0 5 youtube.com"
@@ -2100,120 +2319,96 @@ usage() {
 
 # 非交互式处理端口封禁
 non_interactive_port_out() {
-    PORT=$1
-    if [[ -z "${PORT}" ]]; then
-        echo "错误: 未指定端口"
-        exit 1
-    fi
+    PORT=${1:-}
+    require_valid validate_port_list "端口格式无效" "$PORT" || return 1
     s="add"
-    set_out_ports
+    set_out_ports || return 1
     echo -e "${Info} 已封禁端口 [ ${PORT} ] !\n"
 }
 
 # 非交互式处理端口解封
 non_interactive_port_unban() {
-    PORT=$1
-    if [[ -z "${PORT}" ]]; then
-        echo "错误: 未指定端口"
-        exit 1
-    fi
+    PORT=${1:-}
+    require_valid validate_port_list "端口格式无效" "$PORT" || return 1
     s="delete"
-    set_out_ports
+    set_out_ports || return 1
     echo -e "${Info} 已解封端口 [ ${PORT} ] !\n"
 }
 
 # 非交互式处理关键词封禁
 non_interactive_keyword_ban() {
-    key_word=$1
-    if [[ -z "${key_word}" ]]; then
-        echo "错误: 未指定关键词"
-        exit 1
-    fi
+    key_word=${1:-}
+    require_valid validate_keyword "关键词必须是最多 256 字符的可打印文本" "$key_word" || return 1
     s="add"
-    set_out_keywords
+    set_out_keywords || return 1
     echo -e "${Info} 已封禁关键词 [ ${key_word} ] !\n"
 }
 
 # 非交互式处理关键词解封
 non_interactive_keyword_unban() {
-    key_word=$1
-    if [[ -z "${key_word}" ]]; then
-        echo "错误: 未指定关键词"
-        exit 1
-    fi
+    key_word=${1:-}
+    require_valid validate_keyword "关键词必须是最多 256 字符的可打印文本" "$key_word" || return 1
     s="delete"
-    set_out_keywords
+    set_out_keywords || return 1
     echo -e "${Info} 已解封关键词 [ ${key_word} ] !\n"
 }
 
 # 非交互式处理入网端口放行
 non_interactive_inport_allow() {
-    PORT=$1
-    if [[ -z "${PORT}" ]]; then
-        echo "错误: 未指定端口"
-        exit 1
-    fi
+    PORT=${1:-}
+    require_valid validate_port_list "端口格式无效" "$PORT" || return 1
     s="add"
-    set_in_ports
+    set_in_ports || return 1
     echo -e "${Info} 已放行入网端口 [ ${PORT} ] !\n"
 }
 
 # 非交互式处理入网端口取消放行
 non_interactive_inport_disallow() {
-    PORT=$1
-    if [[ -z "${PORT}" ]]; then
-        echo "错误: 未指定端口"
-        exit 1
-    fi
+    PORT=${1:-}
+    require_valid validate_port_list "端口格式无效" "$PORT" || return 1
     s="delete"
-    set_in_ports
+    set_in_ports || return 1
     echo -e "${Info} 已取消放行入网端口 [ ${PORT} ] !\n"
 }
 
 # 非交互式处理入网IP放行
 non_interactive_inip_allow() {
-    IP=$1
-    if [[ -z "${IP}" ]]; then
-        echo "错误: 未指定IP"
-        exit 1
-    fi
+    IP=${1:-}
+    require_valid validate_ip_or_cidr_list "IP 或 CIDR 格式无效" "$IP" || return 1
     s="add"
-    set_in_ips
+    set_in_ips || return 1
     echo -e "${Info} 已放行入网IP [ ${IP} ] !\n"
 }
 
 # 非交互式处理入网IP取消放行
 non_interactive_inip_disallow() {
-    IP=$1
-    if [[ -z "${IP}" ]]; then
-        echo "错误: 未指定IP"
-        exit 1
-    fi
+    IP=${1:-}
+    require_valid validate_ip_or_cidr_list "IP 或 CIDR 格式无效" "$IP" || return 1
     s="delete"
-    set_in_ips
+    set_in_ips || return 1
     echo -e "${Info} 已取消放行入网IP [ ${IP} ] !\n"
 }
 
 # 非交互式配置DDoS防御规则
 non_interactive_ddos_protection() {
-    setup_ddos_protection
+    setup_ddos_protection || return 1
 }
 
 # 非交互式配置自定义端口DDoS防御
 non_interactive_custom_port_protection() {
-    PORT=$1
-    PROTO_TYPE=$2
-    MAX_CONN=$3
-    MAX_RATE_MIN=$4
-    MAX_RATE_SEC=$5
-    BAN_HOURS=$6
+    PORT=${1:-}
+    PROTO_TYPE=${2:-}
+    MAX_CONN=${3:-}
+    MAX_RATE_MIN=${4:-}
+    MAX_RATE_SEC=${5:-}
+    BAN_HOURS=${6:-}
 
     if [[ -z "${PORT}" ]]; then
         echo "错误: 未指定端口"
         echo "用法: $0 23 <端口> [协议类型] [每IP最大连接数] [每分钟最大连接] [每秒最大连接] [封禁时长]"
         echo "例如: $0 23 8080 1 400 400 300 22"
         echo "协议类型: 1=TCP, 2=UDP, 3=TCP+UDP，默认为1(TCP)"
-        exit 1
+        return 1
     fi
 
     # 设置默认值
@@ -2223,10 +2418,17 @@ non_interactive_custom_port_protection() {
     [[ -z "${MAX_RATE_SEC}" ]] && MAX_RATE_SEC=300
     [[ -z "${BAN_HOURS}" ]] && BAN_HOURS=24
 
+    require_valid validate_single_port "DDoS 端口格式无效" "$PORT" || return 1
+    [[ "$PROTO_TYPE" =~ ^[123]$ ]] || { echo "错误: 协议类型必须是 1、2 或 3" >&2; return 1; }
+    require_valid validate_integer_range "每IP最大连接数必须在1-1000000之间" "$MAX_CONN" 1 1000000 || return 1
+    require_valid validate_integer_range "每分钟速率必须在1-1000000之间" "$MAX_RATE_MIN" 1 1000000 || return 1
+    require_valid validate_integer_range "每秒速率必须在1-1000000之间" "$MAX_RATE_SEC" 1 1000000 || return 1
+    require_valid validate_integer_range "封禁小时必须在1-87600之间" "$BAN_HOURS" 1 87600 || return 1
+
     # 检查IPv4表是否存在
     if ! nft list tables | grep -q "edge_dft_v4"; then
         echo "未检测到DDoS防御表，先创建基础防御规则"
-        setup_ddos_protection
+        setup_ddos_protection || return 1
     fi
 
     # 计算超时时间
@@ -2238,46 +2440,46 @@ non_interactive_custom_port_protection() {
     # 添加IPv4规则
     if [[ "$PROTO_TYPE" == "1" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
         # TCP规则
-        nft add rule ip edge_dft_v4 input tcp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnections_100000ZZ\"
-        nft add rule ip edge_dft_v4 input tcp dport $PORT meter meter-ip-${PORT}-max-connections size 65535 { ip saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
-        nft add rule ip edge_dft_v4 input tcp dport $PORT ct state new meter meter-ip-${PORT}-new-connections-rate size 65535 { ip saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
-        nft add rule ip edge_dft_v4 input tcp dport $PORT ct state new meter meter-ip-${PORT}-new-connections-secondly-rate size 65535 { ip saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+        nft add rule ip edge_dft_v4 input tcp dport "$PORT" ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnections_100000ZZ\" || return 1
+        nft add rule ip edge_dft_v4 input tcp dport "$PORT" meter meter-ip-${PORT}-max-connections size 65535 { ip saddr ct count over "$MAX_CONN" } counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\" || return 1
+        nft add rule ip edge_dft_v4 input tcp dport "$PORT" ct state new meter meter-ip-${PORT}-new-connections-rate size 65535 { ip saddr limit rate over "${MAX_RATE_MIN}/minute" burst "$((MAX_RATE_MIN + 103))" packets} add @deny_set { ip saddr timeout "$BAN_TIMEOUT" } comment \"ZZtcp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\" || return 1
+        nft add rule ip edge_dft_v4 input tcp dport "$PORT" ct state new meter meter-ip-${PORT}-new-connections-secondly-rate size 65535 { ip saddr limit rate over "${MAX_RATE_SEC}/second" burst "$((MAX_RATE_SEC + 3))" packets} add @deny_set { ip saddr timeout "$BAN_TIMEOUT" } comment \"ZZtcp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\" || return 1
     fi
 
     if [[ "$PROTO_TYPE" == "2" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
         # UDP规则
-        nft add rule ip edge_dft_v4 input udp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnections_100000ZZ\"
-        nft add rule ip edge_dft_v4 input udp dport $PORT meter meter-ip-${PORT}-udp-max-connections size 65535 { ip saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
-        nft add rule ip edge_dft_v4 input udp dport $PORT ct state new meter meter-ip-${PORT}-udp-new-connections-rate size 65535 { ip saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
-        nft add rule ip edge_dft_v4 input udp dport $PORT ct state new meter meter-ip-${PORT}-udp-new-connections-secondly-rate size 65535 { ip saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+        nft add rule ip edge_dft_v4 input udp dport "$PORT" ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnections_100000ZZ\" || return 1
+        nft add rule ip edge_dft_v4 input udp dport "$PORT" meter meter-ip-${PORT}-udp-max-connections size 65535 { ip saddr ct count over "$MAX_CONN" } counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\" || return 1
+        nft add rule ip edge_dft_v4 input udp dport "$PORT" ct state new meter meter-ip-${PORT}-udp-new-connections-rate size 65535 { ip saddr limit rate over "${MAX_RATE_MIN}/minute" burst "$((MAX_RATE_MIN + 103))" packets} add @deny_set { ip saddr timeout "$BAN_TIMEOUT" } comment \"ZZudp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\" || return 1
+        nft add rule ip edge_dft_v4 input udp dport "$PORT" ct state new meter meter-ip-${PORT}-udp-new-connections-secondly-rate size 65535 { ip saddr limit rate over "${MAX_RATE_SEC}/second" burst "$((MAX_RATE_SEC + 3))" packets} add @deny_set { ip saddr timeout "$BAN_TIMEOUT" } comment \"ZZudp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\" || return 1
     fi
 
     # 也为IPv6添加规则
     if [[ "$PROTO_TYPE" == "1" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
         # IPv6 TCP规则
-        nft add rule ip6 edge_dft_v6 input tcp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnections_100000ZZ\"
-        nft add rule ip6 edge_dft_v6 input tcp dport $PORT meter meter-ip6-${PORT}-max-connections size 65535 { ip6 saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
-        nft add rule ip6 edge_dft_v6 input tcp dport $PORT ct state new meter meter-ip6-${PORT}-new-connections-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
-        nft add rule ip6 edge_dft_v6 input tcp dport $PORT ct state new meter meter-ip6-${PORT}-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZtcp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+        nft add rule ip6 edge_dft_v6 input tcp dport "$PORT" ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnections_100000ZZ\" || return 1
+        nft add rule ip6 edge_dft_v6 input tcp dport "$PORT" meter meter-ip6-${PORT}-max-connections size 65535 { ip6 saddr ct count over "$MAX_CONN" } counter packets 0 bytes 0 drop comment \"ZZtcp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\" || return 1
+        nft add rule ip6 edge_dft_v6 input tcp dport "$PORT" ct state new meter meter-ip6-${PORT}-new-connections-rate size 65535 { ip6 saddr limit rate over "${MAX_RATE_MIN}/minute" burst "$((MAX_RATE_MIN + 103))" packets} add @deny_set { ip6 saddr timeout "$BAN_TIMEOUT" } comment \"ZZtcp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\" || return 1
+        nft add rule ip6 edge_dft_v6 input tcp dport "$PORT" ct state new meter meter-ip6-${PORT}-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over "${MAX_RATE_SEC}/second" burst "$((MAX_RATE_SEC + 3))" packets} add @deny_set { ip6 saddr timeout "$BAN_TIMEOUT" } comment \"ZZtcp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\" || return 1
     fi
 
     if [[ "$PROTO_TYPE" == "2" ]] || [[ "$PROTO_TYPE" == "3" ]]; then
         # IPv6 UDP规则
-        nft add rule ip6 edge_dft_v6 input udp dport $PORT ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnections_100000ZZ\"
-        nft add rule ip6 edge_dft_v6 input udp dport $PORT meter meter-ip6-${PORT}-udp-max-connections size 65535 { ip6 saddr ct count over $MAX_CONN } counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\"
-        nft add rule ip6 edge_dft_v6 input udp dport $PORT ct state new meter meter-ip6-${PORT}-udp-new-connections-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_MIN}/minute burst $(($MAX_RATE_MIN + 103)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\"
-        nft add rule ip6 edge_dft_v6 input udp dport $PORT ct state new meter meter-ip6-${PORT}-udp-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over ${MAX_RATE_SEC}/second burst $(($MAX_RATE_SEC + 3)) packets} add @deny_set { ip6 saddr timeout $BAN_TIMEOUT } comment \"ZZudp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\"
+        nft add rule ip6 edge_dft_v6 input udp dport "$PORT" ct count over 100000 counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnections_100000ZZ\" || return 1
+        nft add rule ip6 edge_dft_v6 input udp dport "$PORT" meter meter-ip6-${PORT}-udp-max-connections size 65535 { ip6 saddr ct count over "$MAX_CONN" } counter packets 0 bytes 0 drop comment \"ZZudp_${PORT}_maxConnectionsPerIP_${MAX_CONN}ZZ\" || return 1
+        nft add rule ip6 edge_dft_v6 input udp dport "$PORT" ct state new meter meter-ip6-${PORT}-udp-new-connections-rate size 65535 { ip6 saddr limit rate over "${MAX_RATE_MIN}/minute" burst "$((MAX_RATE_MIN + 103))" packets} add @deny_set { ip6 saddr timeout "$BAN_TIMEOUT" } comment \"ZZudp_${PORT}_newConnectionsRate_${MAX_RATE_MIN}_${BAN_HOURS}ZZ\" || return 1
+        nft add rule ip6 edge_dft_v6 input udp dport "$PORT" ct state new meter meter-ip6-${PORT}-udp-new-connections-secondly-rate size 65535 { ip6 saddr limit rate over "${MAX_RATE_SEC}/second" burst "$((MAX_RATE_SEC + 3))" packets} add @deny_set { ip6 saddr timeout "$BAN_TIMEOUT" } comment \"ZZudp_${PORT}_newConnectionsSecondlyRate_${MAX_RATE_SEC}_${BAN_HOURS}ZZ\" || return 1
     fi
 
-    save_nftables_rules
+    save_nftables_rules || return 1
     echo -e "${Green_font_prefix}[成功]${Font_color_suffix} 已为端口 $PORT 配置DDoS防御规则!"
 }
 
 # 非交互式管理IP黑白名单
 non_interactive_ip_list_manage() {
-    ACTION=$1
-    IP=$2
-    DURATION=$3
+    ACTION=${1:-}
+    IP=${2:-}
+    DURATION=${3:-}
 
     if [[ -z "${ACTION}" ]]; then
         echo "错误: 未指定操作类型"
@@ -2285,18 +2487,24 @@ non_interactive_ip_list_manage() {
         echo "操作类型: 1=添加白名单, 2=添加黑名单, 3=从白名单移除, 4=从黑名单移除"
         echo "例如: $0 24 1 1.2.3.4 7 (添加IP 1.2.3.4到白名单，有效期7天)"
         echo "      $0 24 2 1.2.3.4 24 (添加IP 1.2.3.4到黑名单，有效期24小时)"
-        exit 1
+        return 1
     fi
 
     if [[ -z "${IP}" ]]; then
         echo "错误: 未指定IP地址"
-        exit 1
+        return 1
+    fi
+
+    [[ "$ACTION" =~ ^[1-4]$ ]] || { echo "错误: 无效的操作类型" >&2; return 1; }
+    require_valid validate_ip_or_cidr_list "IP 或 CIDR 格式无效" "$IP" || return 1
+    if [[ -n "$DURATION" ]]; then
+        require_valid validate_integer_range "有效期必须在0-87600之间" "$DURATION" 0 87600 || return 1
     fi
 
     # 检查是否已设置防御规则
     if ! nft list tables | grep -q "edge_dft_v4"; then
         echo -e "${Error} 未检测到DDoS防御表，请先配置DDoS防御规则!"
-        setup_ddos_protection
+        setup_ddos_protection || return 1
     fi
 
     case "$ACTION" in
@@ -2306,16 +2514,16 @@ non_interactive_ip_list_manage() {
         if [[ "$IP" == *":"* ]]; then
             # IPv6地址
             if [ "$DURATION" -eq 0 ]; then
-                nft add element ip6 edge_dft_v6 allow_set { $IP }
+                nft add element ip6 edge_dft_v6 allow_set { "$IP" } || return 1
             else
-                nft add element ip6 edge_dft_v6 allow_set { $IP timeout "${DURATION}d" }
+                nft add element ip6 edge_dft_v6 allow_set { "$IP" timeout "${DURATION}d" } || return 1
             fi
         else
             # IPv4地址
             if [ "$DURATION" -eq 0 ]; then
-                nft add element ip edge_dft_v4 allow_set { $IP }
+                nft add element ip edge_dft_v4 allow_set { "$IP" } || return 1
             else
-                nft add element ip edge_dft_v4 allow_set { $IP timeout "${DURATION}d" }
+                nft add element ip edge_dft_v4 allow_set { "$IP" timeout "${DURATION}d" } || return 1
             fi
         fi
         echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已添加到白名单!"
@@ -2326,16 +2534,16 @@ non_interactive_ip_list_manage() {
         if [[ "$IP" == *":"* ]]; then
             # IPv6地址
             if [ "$DURATION" -eq 0 ]; then
-                nft add element ip6 edge_dft_v6 deny_set { $IP }
+                nft add element ip6 edge_dft_v6 deny_set { "$IP" } || return 1
             else
-                nft add element ip6 edge_dft_v6 deny_set { $IP timeout "${DURATION}h" }
+                nft add element ip6 edge_dft_v6 deny_set { "$IP" timeout "${DURATION}h" } || return 1
             fi
         else
             # IPv4地址
             if [ "$DURATION" -eq 0 ]; then
-                nft add element ip edge_dft_v4 deny_set { $IP }
+                nft add element ip edge_dft_v4 deny_set { "$IP" } || return 1
             else
-                nft add element ip edge_dft_v4 deny_set { $IP timeout "${DURATION}h" }
+                nft add element ip edge_dft_v4 deny_set { "$IP" timeout "${DURATION}h" } || return 1
             fi
         fi
         echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已添加到黑名单!"
@@ -2344,10 +2552,10 @@ non_interactive_ip_list_manage() {
         # 判断IPv4或IPv6
         if [[ "$IP" == *":"* ]]; then
             # IPv6地址
-            nft delete element ip6 edge_dft_v6 allow_set { $IP }
+            nft delete element ip6 edge_dft_v6 allow_set { "$IP" } || return 1
         else
             # IPv4地址
-            nft delete element ip edge_dft_v4 allow_set { $IP }
+            nft delete element ip edge_dft_v4 allow_set { "$IP" } || return 1
         fi
         echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已从白名单移除!"
         ;;
@@ -2355,10 +2563,10 @@ non_interactive_ip_list_manage() {
         # 判断IPv4或IPv6
         if [[ "$IP" == *":"* ]]; then
             # IPv6地址
-            nft delete element ip6 edge_dft_v6 deny_set { $IP }
+            nft delete element ip6 edge_dft_v6 deny_set { "$IP" } || return 1
         else
             # IPv4地址
-            nft delete element ip edge_dft_v4 deny_set { $IP }
+            nft delete element ip edge_dft_v4 deny_set { "$IP" } || return 1
         fi
         echo -e "${Green_font_prefix}[成功]${Font_color_suffix} IP $IP 已从黑名单移除!"
         ;;
@@ -2371,6 +2579,7 @@ non_interactive_ip_list_manage() {
 }
 
 # 主菜单显示函数
+# shellcheck shell=bash
 show_main_menu() {
     echo && echo -e " nftables防火墙 管理脚本 ${Red_font_prefix}[v${sh_ver}]${Font_color_suffix}
   -- 参考iPtato.sh脚本实现 --
@@ -2428,11 +2637,39 @@ ${Red_font_prefix}注意:${Font_color_suffix} 本脚本使用nftables，支持�
 }
 
 # 主程序
+if [[ "${1:-}" == "--json" ]]; then
+    if [[ $# -eq 1 ]]; then
+        json_command=help
+        json_output=$(NFTATO_JSON_CHILD=1 bash "$0" --help 2>&1)
+    else
+        json_command=$2
+        json_output=$(NFTATO_JSON_CHILD=1 bash "$0" "${@:2}" 2>&1)
+    fi
+    json_status=$?
+    emit_json_result "$json_command" "$json_status" "$json_output"
+    exit "$json_status"
+fi
+
+requested_action=${1:-}
+action=$(resolve_action "$requested_action")
+extra_param=${2:-}
+
+# Help must be available without root privileges or environment changes.
+if [[ "$action" == "help" || "$action" == "-h" || "$action" == "--help" ]]; then
+    usage
+    exit 0
+fi
+
+validate_named_invocation "$@" || exit 2
+if [[ $is_automated -eq 1 && -n "$requested_action" && "$action" != "20" ]]; then
+    echo "错误: AUTOMATED 模式仅支持初始化或 rules:rebuild（20）" >&2
+    exit 2
+fi
+
+require_root || exit 1
 check_system
 check_run
 check_docker_env
-action=$1
-extra_param=$2
 
 # 检查是否在自动化模式下运行
 if [ $is_automated -eq 1 ]; then
@@ -2450,19 +2687,19 @@ if [[ ! -z $action ]]; then
     case "$action" in
     0)
         view_all_disable_out
-        exit 0
+        exit $?
         ;;
     1)
         disable_btpt
-        exit 0
+        exit $?
         ;;
     2)
         disable_spam
-        exit 0
+        exit $?
         ;;
     3)
         disable_all_out
-        exit 0
+        exit $?
         ;;
     4)
         if [[ -z $extra_param ]]; then
@@ -2470,7 +2707,7 @@ if [[ ! -z $action ]]; then
         else
             non_interactive_port_out "$extra_param"
         fi
-        exit 0
+        exit $?
         ;;
     5)
         if [[ -z $extra_param ]]; then
@@ -2478,19 +2715,19 @@ if [[ ! -z $action ]]; then
         else
             non_interactive_keyword_ban "$extra_param"
         fi
-        exit 0
+        exit $?
         ;;
     6)
         able_btpt
-        exit 0
+        exit $?
         ;;
     7)
         able_spam
-        exit 0
+        exit $?
         ;;
     8)
         able_all_out
-        exit 0
+        exit $?
         ;;
     9)
         if [[ -z $extra_param ]]; then
@@ -2501,7 +2738,7 @@ if [[ ! -z $action ]]; then
             # 修复方案：使用更灵活的正则表达式匹配端口号并查找对应的规则句柄
             non_interactive_port_unban "$extra_param"
         fi
-        exit 0
+        exit $?
         ;;
     10)
         if [[ -z $extra_param ]]; then
@@ -2509,23 +2746,23 @@ if [[ ! -z $action ]]; then
         else
             non_interactive_keyword_unban "$extra_param"
         fi
-        exit 0
+        exit $?
         ;;
     11)
         able_all_keyworld_out
-        exit 0
+        exit $?
         ;;
     12)
         diable_blocklist_out
-        exit 0
+        exit $?
         ;;
     13)
         display_in_port
-        exit 0
+        exit $?
         ;;
     14)
         display_in_ip
-        exit 0
+        exit $?
         ;;
     15)
         if [[ -z $extra_param ]]; then
@@ -2533,7 +2770,7 @@ if [[ ! -z $action ]]; then
         else
             non_interactive_inport_allow "$extra_param"
         fi
-        exit 0
+        exit $?
         ;;
     16)
         if [[ -z $extra_param ]]; then
@@ -2541,7 +2778,7 @@ if [[ ! -z $action ]]; then
         else
             non_interactive_inport_disallow "$extra_param"
         fi
-        exit 0
+        exit $?
         ;;
     17)
         if [[ -z $extra_param ]]; then
@@ -2549,7 +2786,7 @@ if [[ ! -z $action ]]; then
         else
             non_interactive_inip_allow "$extra_param"
         fi
-        exit 0
+        exit $?
         ;;
     18)
         if [[ -z $extra_param ]]; then
@@ -2557,11 +2794,11 @@ if [[ ! -z $action ]]; then
         else
             non_interactive_inip_disallow "$extra_param"
         fi
-        exit 0
+        exit $?
         ;;
     19)
         display_ssh
-        exit 0
+        exit $?
         ;;
     20)
         clear_rebuild_ipta
@@ -2569,11 +2806,11 @@ if [[ ! -z $action ]]; then
         ;;
     21)
         Update_Shell
-        exit 0
+        exit $?
         ;;
     22)
         setup_ddos_protection
-        exit 0
+        exit $?
         ;;
     23)
         if [[ -z $extra_param ]]; then
@@ -2587,7 +2824,7 @@ if [[ ! -z $action ]]; then
             ban_hours=$7
             non_interactive_custom_port_protection "$port" "$proto_type" "$max_conn" "$max_rate_min" "$max_rate_sec" "$ban_hours"
         fi
-        exit 0
+        exit $?
         ;;
     24)
         if [[ -z $extra_param ]]; then
@@ -2598,23 +2835,23 @@ if [[ ! -z $action ]]; then
             duration=$4
             non_interactive_ip_list_manage "$action_type" "$ip" "$duration"
         fi
-        exit 0
+        exit $?
         ;;
     25)
         view_defense_status
-        exit 0
+        exit $?
         ;;
     "help" | "-h" | "--help")
         usage
         exit 0
         ;;
     # 兼容旧的字符串参数
-    "banbt") disable_btpt && exit 0 ;;
-    "banspam") disable_spam && exit 0 ;;
-    "banall") disable_all_out && exit 0 ;;
-    "unbanbt") able_btpt && exit 0 ;;
-    "unbanspam") able_spam && exit 0 ;;
-    "unbanall") able_all_out && exit 0 ;;
+    "banbt") disable_btpt; exit $? ;;
+    "banspam") disable_spam; exit $? ;;
+    "banall") disable_all_out; exit $? ;;
+    "unbanbt") able_btpt; exit $? ;;
+    "unbanspam") able_spam; exit $? ;;
+    "unbanall") able_all_out; exit $? ;;
     *)
         echo "无效的参数: $action"
         usage

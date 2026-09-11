@@ -9,7 +9,10 @@
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run serve",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "build": "cd client && npm run build",
+    "build": "npm run build:nftato && cd client && npm run build",
+    "build:nftato": "bash scripts/build-nftato.sh",
+    "check:nftato": "bash scripts/build-nftato.sh --check",
+    "test:firewall": "docker build -t gnftato-firewall-test -f tests/Dockerfile tests && docker run --rm --privileged --network none -v \"$PWD:/workspace:ro\" gnftato-firewall-test",
     "setup": "npm run install:all",
     "test": "node --test server/test/*.test.js",
     "test:integration": "node server/test/browser-integration.mjs"

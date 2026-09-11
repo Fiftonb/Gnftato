@@ -4,6 +4,8 @@ set -eo pipefail
 [[ -f /.dockerenv ]] || { echo 'Run this test in the documented disposable container.' >&2; exit 1; }
 cd /workspace
 cmp Nftato.sh server/scripts/Nftato.sh
+bash scripts/build-nftato.sh --check
+shellcheck -S error Nftato.sh scripts/nftato-src/*.sh
 # Load definitions without root checks, installation, or the interactive entrypoint.
 source <(sed '/^# 主程序/,$d' Nftato.sh | sed '/^\[\[ \$EUID /d')
 release=debian
