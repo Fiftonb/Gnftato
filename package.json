@@ -14,7 +14,7 @@
     "check:nftato": "bash scripts/build-nftato.sh --check",
     "test:firewall": "docker build -t gnftato-firewall-test -f tests/Dockerfile tests && docker run --rm --privileged --network none -v \"$PWD:/workspace:ro\" gnftato-firewall-test",
     "setup": "npm run install:all",
-    "test": "node --test server/test/*.test.js",
+    "test": "node --test server/test/*.test.js && npm test --prefix client && bash tests/nftato-unit.sh",
     "test:integration": "node server/test/browser-integration.mjs"
   },
   "author": "",

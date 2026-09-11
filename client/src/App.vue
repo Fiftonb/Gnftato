@@ -1,4 +1,5 @@
 <template>
+  <el-config-provider :locale="locale">
   <div id="app">
     <el-header class="header" v-if="isAuthenticated">
       <div class="header-left">
@@ -19,13 +20,16 @@
     </el-header>
     <router-view />
   </div>
+  </el-config-provider>
 </template>
 
 <script>
 import { mapGetters, mapActions } from 'vuex';
+import zhCn from 'element-plus/es/locale/lang/zh-cn';
 
 export default {
   name: 'App',
+  data: () => ({ locale: zhCn }),
   computed: {
     ...mapGetters(['isAuthenticated', 'currentUser'])
   },
@@ -135,4 +139,4 @@ html, body {
     margin: 2vh auto !important;
   }
 }
-</style> 
+</style>

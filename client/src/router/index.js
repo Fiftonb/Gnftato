@@ -1,12 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import Home from '../views/Home.vue';
-import Servers from '../views/Servers.vue';
-import Rules from '../views/Rules.vue';
 import Login from '../views/Login.vue';
-import Register from '../views/Register.vue';
-import Profile from '../views/Profile.vue';
 import store from '../store';
 
+const Home = () => import('../views/Home.vue');
+const Servers = () => import('../views/Servers.vue');
+const Rules = () => import('../views/Rules.vue');
+const Register = () => import('../views/Register.vue');
+const Profile = () => import('../views/Profile.vue');
 
 const routes = [
   { path: '/users/new', name: 'create-user', component: Register, meta: { requiresAuth: true, requiresAdmin: true } },

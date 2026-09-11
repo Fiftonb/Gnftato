@@ -5,6 +5,9 @@ export default [
   {
     files: ['src/**/*.{js,vue}'],
     languageOptions: { ecmaVersion: 'latest', sourceType: 'module' },
-    rules: { 'vue/multi-word-component-names': 'off' }
+    rules: {
+      'no-dupe-keys': 'error',
+      'vue/multi-word-component-names': 'off'
+    }
   }
 ];

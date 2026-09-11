@@ -1,12 +1,14 @@
 import { createApp, markRaw } from 'vue';
-import ElementPlus from 'element-plus';
-import zhCn from 'element-plus/es/locale/lang/zh-cn';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { ArrowDown, Back, Close, Connection, Delete, Edit, Loading, Refresh, Operation, Setting, Upload, WarningFilled, Warning } from '@element-plus/icons-vue';
-import 'element-plus/dist/index.css';
+import 'element-plus/es/components/message/style/css';
+import 'element-plus/es/components/message-box/style/css';
+import 'element-plus/es/components/notification/style/css';
 import App from './App.vue';
 import router from './router';
 import store from './store';
 import axios from 'axios';
+import { errorMessage } from '@/features/servers/serverStatus';
 
 // 设置axios默认配置
 axios.defaults.baseURL = (import.meta.env.VITE_API_URL || import.meta.env.VUE_APP_API_URL) || '';
@@ -15,6 +17,11 @@ axios.defaults.baseURL = (import.meta.env.VITE_API_URL || import.meta.env.VUE_AP
 axios.interceptors.response.use(
   response => response,
   error => {
+    const normalizedMessage = errorMessage(error, error.message);
+    error.message = normalizedMessage;
+    if (error.response?.data && typeof error.response.data === 'object' && !error.response.data.message) {
+      error.response.data.message = normalizedMessage;
+    }
     if (error.response && error.response.status === 401) {
       // 如果接收到401错误，清除认证状态并重定向到登录页
       store.dispatch('logout');
@@ -35,7 +42,8 @@ const icons = { ArrowDown, Back, Close, Connection, Delete, Edit, Loading, Refre
 for (const [name, component] of Object.entries(icons)) app.component(name, component);
 app.config.globalProperties.$icons = markRaw(icons);
 app.config.globalProperties.$http = axios;
-app.use(ElementPlus, { locale: zhCn });
+app.config.globalProperties.$message = ElMessage;
+app.config.globalProperties.$confirm = ElMessageBox.confirm;
 app.use(store);
 app.use(router);
 app.mount('#app');
