@@ -1,0 +1,31 @@
+.git
+.github
+.codex
+.vscode
+.playwright-mcp
+**/.DS_Store
+
+# Runtime configuration, credentials and persistent application data.
+.env
+.env.*
+**/.env
+**/.env.*
+**/.npmrc
+**/config.json
+**/data
+**/logs
+**/tmp
+**/*.log
+**/*.pem
+**/*.key
+**/id_rsa*
+**/id_ed25519*
+
+# Dependencies and generated assets are produced inside the build stages.
+**/node_modules
+client/dist
+server/public
+server/test
+coverage
+tests
+docs

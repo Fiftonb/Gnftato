@@ -1,3 +1,11 @@
 node_modules
 
 data
+.env
+.env.*
+!.env.example
+server/config.json
+.playwright-mcp/
+client/test-results/
+client/playwright-report/
+coverage/
