@@ -1,81 +1,32 @@
-### 2. 安装依赖
+# 本地安装与开发
 
-安装nodejs环境（建议debian11+系统）:
+使用 Node.js 24 LTS 和 npm 11 以上。在项目根目录执行：
 
-```bash
-apt-get remove nodejs npm
-rm -rf /usr/local/lib/node_modules
-rm -rf /usr/local/bin/npm
-rm -rf /usr/local/bin/node
-rm -rf ~/.npm
-source <(curl -L https://nodejs-install.netlify.app/install.sh) -v 22.2.0
+```sh
+npm ci
+npm --prefix server ci
+npm --prefix client ci
 ```
 
-一键安装所有依赖:
+首次配置时复制 `.env.example` 为项目根目录的 `.env`，已有配置请保留并补充必要字段。将 `JWT_SECRET` 设置为独立随机密钥（可执行 `openssl rand -hex 32` 生成），并设置首次管理员的 `ADMIN_PASSWORD`。新密码去除首尾空白后至少 12 个字符，UTF-8 长度不超过 72 字节；`ADMIN_USERNAME` 默认是 `admin`。
 
-```bash
-npm run setup
-```
-
-可直接看第四步骤
-
-### 3. 配置环境变量(项目自带可忽略)
-
-复制`.env.example`文件为`.env`，或直接创建`.env`文件，并根据实际情况修改:
-
-```bash
-cp .env.example .env
-```
-
-配置示例:
-
-```
-# 服务器配置
-PORT=3001
-CORS_ORIGIN=http://localhost:8080
-
-# 数据目录配置
-DATA_DIR=./server/data
-
-# JWT配置
-JWT_SECRET=your-secret-key-change-this
-JWT_EXPIRES_IN=7d
-
-# 日志配置
-LOG_LEVEL=info
-LOG_DIR=./logs
-
-# 临时文件目录
-TMP_DIR=./tmp
-
-# 应用模式配置
-NODE_ENV=development
-# 设置为 true 可避免 nodemon 频繁重启
-STABLE_MODE=true
-```
-
-### 4. 构建与启动
-
-一键构建前端并启动服务:
-
-```bash
-# 构建前端 (将构建结果输出到 server/public 目录)
+```sh
+npm --prefix server run create-admin
 npm run build
-
-# 启动后端服务器
 npm start
 ```
 
-或使用一键启动脚本(仅开发模式):
+生产静态文件生成于 `server/public`，访问 `http://localhost:3001`。已有管理员的密码不会被初始化覆盖；日后通过面板修改密码。
 
-```bash
-./start-all.sh
+开发模式使用两个终端分别执行 `npm run dev:server` 与 `npm run dev:client`，或用 `npm run dev` 同时运行。Vite 默认仅监听本机 `http://localhost:8080`，代理 API 与 Socket.IO 到 `127.0.0.1:3001`。生产运行以 `NODE_ENV=production` 启动后端。
+
+验证命令：
+
+```sh
+npm test
+npm --prefix client run lint
+npm --prefix client run test:e2e
+npm run build
 ```
 
-## 开发模式
-
-同时启动前端和后端开发服务器:
-
-```bash
-npm run dev
-```
+浏览器回归首次运行需按 Playwright 提示安装 Chromium。测试使用临时数据与模拟 SSH，不操作受管理服务器。升级现有安装前请阅读[安全升级与部署迁移](docs/security-upgrade.md)。

@@ -1,3 +1,5 @@
+> 安全升级说明：当前版本要求 Node.js 24、独立随机 `JWT_SECRET`，首次初始化必须设置 `ADMIN_PASSWORD`。以下历史教程的镜像与默认配置不代表本次修复已发布，请优先按[安全升级与部署迁移](docs/security-upgrade.md)构建和配置。
+
 
 # CLAWCLOUD Run 平台部署Gnftato教程
 

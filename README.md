@@ -54,13 +54,13 @@ AUTOMATED=yes NFTATO_WEB_PORTS=3001,8443 bash Nftato.sh 20
 ## 技术栈
 
 - **后端**：Node.js、Express、SSH2、本地JSON存储、JWT认证
-- **前端**：Vue.js 2.x、Element UI、Axios、Vuex状态管理
-- **通信**：RESTful API
+- **前端**：Vue.js 3、Element Plus、Vite、Axios、Vuex状态管理
+- **通信**：RESTful API、带身份校验的 Socket.IO
 - **认证**：基于JWT的用户认证系统
 
 ## 系统要求
 
-- Node.js 12.x以上
+- Node.js 24 LTS、npm 11 以上
 - 远程服务器需支持SSH连接
 
 ## 安装部署
@@ -79,17 +79,16 @@ Docker部署教程=>[点击查看](https://github.com/Fiftonb/Gnftato/blob/main/
 
 ## 用户认证
 
-系统采用固定管理员模式，不支持开放注册。系统启动时会自动创建默认管理员账户：
+系统不支持匿名注册。首次启动前，在根目录 `.env` 或进程环境中设置随机 `JWT_SECRET` 和 `ADMIN_PASSWORD`；用户名由 `ADMIN_USERNAME` 指定，默认为 `admin`，没有默认密码。已有 `isAdmin: true` 的管理员账号及密码会保留。
 
-- **用户名**: admin
-- **密码**: admin123
-
-您也可以通过命令行创建/重置管理员账户：
+管理员可通过面板创建账户；普通账户仅能访问个人资料和修改自己的密码。也可通过命令行初始化管理员（不会覆盖已有密码或自动提升普通账户权限）：
 
 ```bash
 cd server
 npm run create-admin
 ```
+
+升级已有部署请先阅读[安全升级与部署迁移](docs/security-upgrade.md)，其中包含数据保留、密钥配置和验证步骤。首次本地启动前也需要运行一次上述初始化命令。
 
 ## 服务访问
 
@@ -126,7 +125,7 @@ npm run create-admin
 
 ## 安全提示
 
-- 登录系统后请立即修改默认管理员密码
+- 从旧版升级时，如果仍使用历史默认管理员密码，请通过面板修改
 - 确保JWT密钥安全，不要使用默认的密钥
 - 请确保使用安全的密码
 - 建议使用SSH密钥认证而非密码认证
@@ -141,7 +140,7 @@ npm run create-admin
 不使用面板只想使用脚本(完善后的脚本)
 
 ```bash
-wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh && chmod +x Nftato.sh && bash Nftato.sh
+wget -N https://raw.githubusercontent.com/Fiftonb/Gnftato/refs/heads/main/Nftato.sh && chmod +x Nftato.sh && bash Nftato.sh
 ```
 二次使用目录下执行
 ```sh
@@ -161,6 +160,5 @@ MIT License
 
 ## Stargazers over time
 [![Stargazers over time](https://starchart.cc/Fiftonb/Gnftato.svg?variant=adaptive)](https://starchart.cc/Fiftonb/Gnftato)
-
 
 
