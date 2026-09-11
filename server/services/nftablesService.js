@@ -1,1182 +1,157 @@
+'use strict';
+
+const net = require('node:net');
 const sshService = require('./sshService');
+const Server = require('../models/Server');
+const { resolveCommand, shellQuote } = require('./nftatoCommandRegistry');
+
+const messages = {
+  0: '获取封禁列表', 1: '封禁BT/PT协议', 2: '封禁垃圾邮件端口', 3: '封禁全部',
+  4: '封禁自定义端口', 5: '封禁自定义关键词', 6: '解封BT/PT协议', 7: '解封垃圾邮件端口',
+  8: '解封全部', 9: '解封自定义端口', 10: '解封自定义关键词', 11: '解封所有关键词',
+  13: '获取入网端口', 14: '获取入网IP', 15: '放行入网端口', 16: '取消放行入网端口',
+  17: '放行入网IP', 18: '取消放行入网IP', 19: '获取SSH端口', 20: '清空所有规则',
+  22: '配置DDoS防御规则', 23: '配置自定义端口DDoS防御', 24: '管理IP黑白名单', 25: '查看防御状态'
+};
 
 class NftablesService {
-  /**
-   * 获取脚本路径
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<string>} - 脚本路径
-   */
-  constructor() {
-    // 用于IP黑白名单操作的锁机制
-    this.ipListsLocks = {};
+  constructor({ ssh = sshService, serverRepository = Server } = {}) {
+    this.ssh = ssh;
+    this.serverRepository = serverRepository;
   }
 
-  async _getScriptPath(serverId) {
+  async _run(serverId, action, parameters) {
+    if (!this.ssh.checkConnection(serverId)) return { success: false, data: null, error: '服务器未连接，请先连接服务器' };
     try {
-      console.log(`[诊断] 获取脚本路径，服务器ID: ${serverId}`);
-      
-      // 检查脚本位置，首先检查/root/目录，其次检查用户主目录
-      const scriptCheck = await sshService.executeCommand(serverId, 'test -f /root/Nftato.sh && echo "root" || (test -f ~/Nftato.sh && echo "home" || echo "not found")');
-      
-      console.log(`[诊断] 脚本路径检查结果: ${scriptCheck.stdout.trim()}, 退出码: ${scriptCheck.code}`);
-      
-      if (scriptCheck.stdout.includes('not found')) {
-        console.error(`[诊断] 未找到Nftato脚本，尝试部署脚本`);
-        
-        // 尝试一次自动部署
-        try {
-          console.log(`[诊断] 自动部署Nftato脚本`);
-          await sshService.deployIptato(serverId);
-          
-          // 再次检查脚本位置，优先检查/root/目录
-          const recheck = await sshService.executeCommand(serverId, 'test -f /root/Nftato.sh && echo "root" || (test -f ~/Nftato.sh && echo "home" || echo "not found")');
-          console.log(`[诊断] 部署后再次检查，结果: ${recheck.stdout.trim()}`);
-          
-          if (recheck.stdout.includes('not found')) {
-            throw new Error('即使尝试部署后仍未找到Nftato脚本');
-          }
-          
-          return recheck.stdout.includes('root') ? '/root/Nftato.sh' : '~/Nftato.sh';
-        } catch (deployError) {
-          console.error(`[诊断] 自动部署失败: ${deployError.message}`);
-          throw new Error(`未找到Nftato脚本且自动部署失败: ${deployError.message}`);
-        }
-      }
-      
-      const scriptPath = scriptCheck.stdout.includes('root') ? '/root/Nftato.sh' : '~/Nftato.sh';
-      console.log(`[诊断] 使用脚本路径: ${scriptPath}`);
-      return scriptPath;
-    } catch (error) {
-      console.error(`[诊断] 获取脚本路径失败: ${error.message}`);
-      console.error(`[诊断] 错误堆栈: ${error.stack}`);
-      
-      // 出错时默认返回可能的路径，优先使用/root/路径
-      console.warn(`[警告] 由于获取脚本路径出错，默认使用/root/Nftato.sh路径`);
-      return '/root/Nftato.sh';
-    }
-  }
-
-  /**
-   * 检查前置条件
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 检查结果
-   */
-  async _checkPrerequisites(serverId) {
-    try {
-      // 检查SSH连接
-      const connection = sshService.connections[serverId];
-      if (!connection) {
-        return {
-          success: false,
-          error: '服务器未连接，请先连接服务器'
-        };
-      }
-      
-      // 检查脚本是否存在（优先检查/root/目录，其次检查用户主目录）
-      const scriptCheck = await sshService.executeCommand(serverId, 'test -f /root/Nftato.sh && echo "exists in root" || (test -f ~/Nftato.sh && echo "exists in home" || echo "not found")');
-      if (scriptCheck.stdout.includes('not found')) {
-        return {
-          success: false,
-          error: 'Nftato脚本未部署，请先部署脚本'
-        };
-      }
-      
-      console.log(`[诊断] 前置检查：脚本位置 ${scriptCheck.stdout.trim()}`);
-      
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: `检查前置条件失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 获取服务器上的当前封禁列表
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 封禁列表结果
-   */
-  async getBlockList(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 0);
+      const result = await this.ssh.executeNftato(serverId, action, parameters);
       return {
         success: result.success,
         data: result.output,
-        error: result.error
+        error: result.error,
+        code: result.code,
+        outcomeUnknown: result.outcomeUnknown === true,
+        command: result.command
       };
     } catch (error) {
       return {
         success: false,
         data: null,
-        error: `获取封禁列表失败: ${error.message}`
+        error: `${messages[action] || '执行Nftato操作'}失败: ${error.message}`,
+        outcomeUnknown: error.outcomeUnknown === true
       };
     }
   }
 
-  /**
-   * 封禁BT/PT协议
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
-  async blockBTPT(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 1);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `封禁BT/PT协议失败: ${error.message}`
-      };
-    }
-  }
+  getBlockList(serverId) { return this._run(serverId, 0); }
+  blockBTPT(serverId) { return this._run(serverId, 1); }
+  blockSPAM(serverId) { return this._run(serverId, 2); }
+  blockAll(serverId) { return this._run(serverId, 3); }
+  blockCustomPorts(serverId, ports) { return this._run(serverId, 4, ports); }
+  blockCustomKeyword(serverId, keyword) { return this._run(serverId, 5, keyword); }
+  unblockBTPT(serverId) { return this._run(serverId, 6); }
+  unblockSPAM(serverId) { return this._run(serverId, 7); }
+  unblockAll(serverId) { return this._run(serverId, 8); }
+  unblockCustomPorts(serverId, ports) { return this._run(serverId, 9, ports); }
+  unblockCustomKeyword(serverId, keyword) { return this._run(serverId, 10, keyword); }
+  unblockAllKeywords(serverId) { return this._run(serverId, 11); }
+  allowInboundPorts(serverId, ports) { return this._run(serverId, 15, ports); }
+  allowInboundIPs(serverId, ips) { return this._run(serverId, 17, ips); }
+  disallowInboundIPs(serverId, ips) { return this._run(serverId, 18, ips); }
+  getSSHPort(serverId) { return this._run(serverId, 19); }
+  clearAllRules(serverId) { return this._run(serverId, 20); }
+  setupDdosProtection(serverId) { return this._run(serverId, 22); }
+  viewDefenseStatus(serverId) { return this._run(serverId, 25); }
 
-  /**
-   * 封禁垃圾邮件端口
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
-  async blockSPAM(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 2);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `封禁垃圾邮件端口失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 封禁BT/PT和垃圾邮件
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
-  async blockAll(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 3);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `封禁全部失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 封禁自定义端口
-   * @param {string} serverId - 服务器ID
-   * @param {string} ports - 要封禁的端口
-   * @returns {Promise<object>} - 操作结果
-   */
-  async blockCustomPorts(serverId, ports) {
-    try {
-      const result = await this._executeNftatoCommand(serverId, 4, ports);
-      
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `封禁自定义端口失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 封禁自定义关键词
-   * @param {string} serverId - 服务器ID
-   * @param {string} keyword - 要封禁的关键词
-   * @returns {Promise<object>} - 操作结果
-   */
-  async blockCustomKeyword(serverId, keyword) {
-    try {
-      const result = await this._executeNftatoCommand(serverId, 5, keyword);
-      
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `封禁自定义关键词失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 解封BT/PT协议
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
-  async unblockBTPT(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 6);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `解封BT/PT协议失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 解封垃圾邮件端口
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
-  async unblockSPAM(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 7);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `解封垃圾邮件端口失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 解封BT/PT和垃圾邮件
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
-  async unblockAll(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 8);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `解封BT/PT和垃圾邮件失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 解封自定义端口
-   * @param {string} serverId - 服务器ID
-   * @param {string} ports - 要解封的端口
-   * @returns {Promise<object>} - 操作结果
-   */
-  async unblockCustomPorts(serverId, ports) {
-    try {
-      const result = await this._executeNftatoCommand(serverId, 9, ports);
-      
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `解封自定义端口失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 解封自定义关键词
-   * @param {string} serverId - 服务器ID
-   * @param {string} keyword - 要解封的关键词
-   * @returns {Promise<object>} - 操作结果
-   */
-  async unblockCustomKeyword(serverId, keyword) {
-    try {
-      const result = await this._executeNftatoCommand(serverId, 10, keyword);
-      
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `解封自定义关键词失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 解封所有关键词
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
-  async unblockAllKeywords(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 11);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `解封所有关键词失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 获取当前放行的入网端口
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
   async getInboundPorts(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 13);
-      
-      // 处理结果
-      if (result.success) {
-        const output = result.output || '';
-        
-        // 检查是否明确表示没有端口
-        if (output.includes('当前未放行任何端口') || 
-            output.includes('No allowed ports')) {
-          console.log(`[诊断] 检测到空端口列表`);
-          return {
-            success: true,
-            data: { tcp: [], udp: [] },
-            error: null
-          };
-        }
-        
-        // 解析输出
-        const parsedData = this._parsePortOutput(output);
-        console.log(`[诊断] 解析端口列表结果: TCP=${parsedData.tcp.length}个, UDP=${parsedData.udp.length}个`);
-        
-        return {
-          success: true,
-          data: parsedData,
-          error: null
-        };
-      }
-      
-      return {
-        success: result.success,
-        data: { tcp: [], udp: [] },
-        error: result.error
-      };
-    } catch (error) {
-      console.error(`获取入网端口失败: ${error.message}`);
-      return {
-        success: false,
-        data: { tcp: [], udp: [] },
-        error: `获取入网端口失败: ${error.message}`
-      };
-    }
+    const result = await this._run(serverId, 13);
+    return result.success ? { ...result, data: this._parsePortOutput(result.data || '') } : { ...result, data: { tcp: [], udp: [] } };
   }
 
-  /**
-   * 获取当前放行的入网IP
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
   async getInboundIPs(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 14);
-      
-      // 处理结果
-      if (result.success) {
-        const output = result.output || '';
-        
-        // 检查是否明确表示没有IP
-        if (output.includes('当前未放行任何 IP') || 
-            output.includes('No allowed IPs')) {
-          console.log(`[诊断] 检测到空IP列表`);
-          return {
-            success: true,
-            data: [],
-            error: null
-          };
-        }
-        
-        // 解析输出
-        const parsedData = this._parseIPOutput(output);
-        console.log(`[诊断] 解析IP列表结果: ${parsedData.length}个IP`);
-        
-        return {
-          success: true,
-          data: parsedData,
-          error: null
-        };
-      }
-      
-      return {
-        success: result.success,
-        data: [],
-        error: result.error
-      };
-    } catch (error) {
-      console.error(`获取入网IP失败: ${error.message}`);
-      return {
-        success: false,
-        data: [],
-        error: `获取入网IP失败: ${error.message}`
-      };
-    }
+    const result = await this._run(serverId, 14);
+    return result.success ? { ...result, data: this._parseIPOutput(result.data || '') } : { ...result, data: [] };
   }
 
-  /**
-   * 放行入网端口
-   * @param {string} serverId - 服务器ID
-   * @param {string} ports - 要放行的端口
-   * @returns {Promise<object>} - 操作结果
-   */
-  async allowInboundPorts(serverId, ports) {
-    try {
-      const result = await this._executeNftatoCommand(serverId, 15, ports);
-      
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `放行入网端口失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 取消放行入网端口
-   * @param {string} serverId - 服务器ID
-   * @param {string} ports - 要取消放行的端口
-   * @returns {Promise<object>} - 操作结果
-   */
   async disallowInboundPorts(serverId, ports) {
     try {
-      console.log(`[详细日志] 开始执行disallowInboundPorts，服务器ID: ${serverId}，端口: ${ports}`);
-      
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        console.log(`[详细日志] 前置条件检查失败: ${prereqCheck.error}`);
-        return prereqCheck;
-      }
-      
-      // 确保ports是字符串类型
-      const portsStr = String(ports || '');
-      if (!portsStr.trim()) {
-        console.log(`[详细日志] 端口参数为空`);
-        return {
-          success: false,
-          error: '端口参数不能为空'
-        };
-      }
-      
-      console.log(`[详细日志] 转换后的端口参数: ${portsStr}`);
-      
-      // 检查是否是SSH端口
-      try {
-        // 从服务器JSON文件直接读取信息，而不是通过模型查询数据库
-        const fs = require('fs');
-        const path = require('path');
-        const serversFilePath = path.join(require('../config/runtime').getDataDir(), 'servers.json');
-        
-        console.log(`[详细日志] 读取服务器文件: ${serversFilePath}`);
-        
-        // 读取JSON文件
-        const serversData = JSON.parse(fs.readFileSync(serversFilePath, 'utf8'));
-        const server = serversData.servers.find(s => s._id === serverId);
-        
-        if (!server) {
-          console.log(`[详细日志] 未找到服务器信息，ID: ${serverId}`);
-          return {
-            success: false,
-            error: '服务器不存在'
-          };
-        }
-        
-        // 获取当前SSH端口
-        let sshPort = server.port || 22;
-        console.log(`[详细日志] 服务器SSH端口: ${sshPort}`);
-        
-        // 检查端口列表中是否包含SSH端口 - 使用转换后的字符串
-        const portSegments = portsStr.split(',');
-        
-        console.log(`[详细日志] 分割后的端口段数量: ${portSegments.length}`);
-        
-        // 高效检查SSH端口是否在任何端口段中
-        for (const segment of portSegments) {
-          const trimmedSegment = segment.trim();
-          console.log(`[详细日志] 检查端口段: ${trimmedSegment}`);
-          
-          if (trimmedSegment.includes('-')) {
-            // 处理端口范围
-            const [start, end] = trimmedSegment.split('-').map(Number);
-            console.log(`[详细日志] 端口范围: ${start}-${end}, SSH端口: ${sshPort}`);
-            if (sshPort >= start && sshPort <= end) {
-              console.log(`[详细日志] SSH端口在端口范围内，拒绝操作`);
-              return {
-                success: false,
-                error: `不能取消SSH端口(${sshPort})的放行，这将导致无法连接服务器`
-              };
-            }
-          } else {
-            // 处理单个端口
-            const port = parseInt(trimmedSegment, 10);
-            console.log(`[详细日志] 单个端口: ${port}, SSH端口: ${sshPort}`);
-            if (port === sshPort) {
-              console.log(`[详细日志] 匹配SSH端口，拒绝操作`);
-              return {
-                success: false,
-                error: `不能取消SSH端口(${sshPort})的放行，这将导致无法连接服务器`
-              };
-            }
-          }
-        }
-        
-        console.log(`[详细日志] SSH端口检查通过，继续执行`);
-      } catch (checkError) {
-        console.error(`检查SSH端口出错: ${checkError.message}`);
-        console.error(`错误堆栈: ${checkError.stack}`);
-        // 出错时继续执行，但记录日志
-      }
-      
-      console.log(`[详细日志] 准备执行executeNftato命令，动作: 16, 参数: ${portsStr}`);
-      
-      // 设置执行超时
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('执行命令超时')), 30000); // 30秒超时
+      const canonical = resolveCommand(16, ports).args[0];
+      const server = await this.serverRepository.findById(serverId);
+      if (!server) return { success: false, data: null, error: '服务器不存在' };
+      const sshPort = Number(server.port || 22);
+      const includesSshPort = canonical.split(',').some(segment => {
+        const [start, end = start] = segment.split('-').map(Number);
+        return sshPort >= start && sshPort <= end;
       });
-      
-      try {
-        // 使用Promise.race实现超时机制
-        const result = await Promise.race([
-          sshService.executeNftato(serverId, 16, portsStr),
-          timeoutPromise
-        ]);
-        
-        console.log(`[详细日志] 命令执行完成，结果: ${JSON.stringify(result)}`);
-        
-        return {
-          success: result.success,
-          data: result.output,
-          error: result.error
-        };
-      } catch (timeoutError) {
-        console.error(`[详细日志] 命令执行超时: ${timeoutError.message}`);
-        return {
-          success: false,
-          data: null,
-          error: `取消放行入网端口操作超时，请检查服务器连接或重试`
-        };
-      }
+      if (includesSshPort) return { success: false, data: null, error: `不能取消SSH端口(${sshPort})的放行，这将导致无法连接服务器` };
+      return this._run(serverId, 16, canonical);
     } catch (error) {
-      console.error(`取消放行入网端口失败: ${error.message}`);
-      console.error(`错误堆栈: ${error.stack}`);
-      return {
-        success: false,
-        data: null,
-        error: `取消放行入网端口失败: ${error.message}`
-      };
+      return { success: false, data: null, error: error.message, outcomeUnknown: error.outcomeUnknown === true };
     }
   }
 
-  /**
-   * 放行入网IP
-   * @param {string} serverId - 服务器ID
-   * @param {string} ips - 要放行的IP
-   * @returns {Promise<object>} - 操作结果
-   */
-  async allowInboundIPs(serverId, ips) {
-    try {
-      const result = await this._executeNftatoCommand(serverId, 17, ips);
-      
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `放行入网IP失败: ${error.message}`
-      };
-    }
+  setupCustomPortProtection(serverId, port, protoType = 1, maxConn = 400, maxRateMin = 400, maxRateSec = 300, banHours = 24) {
+    return this._run(serverId, 23, [port, protoType, maxConn, maxRateMin, maxRateSec, banHours]);
   }
 
-  /**
-   * 取消放行入网IP
-   * @param {string} serverId - 服务器ID
-   * @param {string} ips - 要取消放行的IP
-   * @returns {Promise<object>} - 操作结果
-   */
-  async disallowInboundIPs(serverId, ips) {
-    try {
-      const result = await this._executeNftatoCommand(serverId, 18, ips);
-      
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `取消放行入网IP失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 查看当前SSH端口
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
-  async getSSHPort(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 19);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `获取SSH端口失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 清空所有规则
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
-  async clearAllRules(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 20);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `清空所有规则失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 执行Nftato命令
-   * @param {string} serverId - 服务器ID
-   * @param {number} action - 要执行的操作代码
-   * @param {string} params - 要传递的参数
-   * @returns {Promise<object>} - 执行结果
-   */
-  async _executeNftatoCommand(serverId, action, params = '') {
-    try {
-      console.log(`[诊断] 准备执行Nftato命令，服务器ID: ${serverId}, 动作: ${action}, 参数: ${params}`);
-      
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        console.log(`[诊断] 前置条件检查失败: ${prereqCheck.error}`);
-        return prereqCheck;
-      }
-      
-      // 设置操作超时
-      const timeout = setTimeout(() => {
-        console.error(`[诊断] 操作超时，服务器ID: ${serverId}, 动作: ${action}`);
-      }, 15000); // 15秒警告
-      
-      try {
-        let result;
-        
-        // 优先使用sshService的executeNftato方法
-        if (!params) {
-          console.log(`[诊断] 使用executeNftato执行命令，动作: ${action}`);
-          result = await sshService.executeNftato(serverId, action);
-        } else {
-          // 对于需要参数的命令，获取脚本路径并执行
-          console.log(`[诊断] 获取脚本路径并执行命令`);
-          const scriptPath = await this._getScriptPath(serverId);
-          console.log(`[诊断] 获取到脚本路径: ${scriptPath}`);
-          
-          result = await sshService.executeCommand(serverId, `bash ${scriptPath} ${action} ${params}`);
-          
-          // 格式化返回结果，保持一致性
-          result = {
-            success: result.code === 0,
-            output: result.stdout,
-            error: result.stderr,
-            code: result.code
-          };
-        }
-        
-        clearTimeout(timeout);
-        console.log(`[诊断] 命令执行完成，结果: ${result.success ? '成功' : '失败'}`);
-        
-        return result;
-      } catch (commandError) {
-        clearTimeout(timeout);
-        console.error(`[诊断] 执行命令过程中发生错误: ${commandError.message}`);
-        console.error(`[诊断] 错误堆栈: ${commandError.stack}`);
-        
-        return {
-          success: false,
-          output: '',
-          error: `执行命令失败: ${commandError.message}`,
-          code: -1
-        };
-      }
-    } catch (error) {
-      console.error(`[诊断] _executeNftatoCommand方法异常: ${error.message}`);
-      console.error(`[诊断] 异常堆栈: ${error.stack}`);
-      
-      return {
-        success: false,
-        output: '',
-        error: `执行Nftato命令失败: ${error.message}`,
-        code: -1
-      };
-    }
-  }
-
-  /**
-   * 解析端口列表输出
-   * @param {string} output - 脚本原始输出
-   * @returns {Object} - 解析后的结构化数据
-   */
-  _parsePortOutput(output) {
-    try {
-      // 移除ANSI颜色代码
-      output = output.replace(/\u001b\[\d+(;\d+)?m/g, '');
-      
-      // 初始化结果
-      const result = {
-        tcp: [],
-        udp: []
-      };
-      
-      // 提取TCP部分 - 适应新的格式
-      const tcpMatch = output.match(/TCP端口:([\s\S]*?)={3,}/);
-      if (tcpMatch && tcpMatch[1]) {
-        // 提取数字
-        const tcpPorts = tcpMatch[1].match(/\d+/g);
-        if (tcpPorts) {
-          result.tcp = tcpPorts.map(port => parseInt(port, 10));
-        }
-      }
-      
-      // 提取UDP部分 - 适应新的格式
-      const udpMatch = output.match(/UDP端口:([\s\S]*?)={3,}/);
-      if (udpMatch && udpMatch[1]) {
-        // 提取数字
-        const udpPorts = udpMatch[1].match(/\d+/g);
-        if (udpPorts) {
-          result.udp = udpPorts.map(port => parseInt(port, 10));
-        }
-      }
-      
-      return result;
-    } catch (error) {
-      console.error(`[诊断] 解析端口输出失败: ${error.message}`);
-      return { tcp: [], udp: [] };
-    }
-  }
-  
-  /**
-   * 解析IP列表输出
-   * @param {string} output - 脚本原始输出
-   * @returns {Array} - 解析后的IP列表
-   */
-  _parseIPOutput(output) {
-    try {
-      // 移除ANSI颜色代码
-      output = output.replace(/\u001b\[\d+(;\d+)?m/g, '');
-      
-      // 提取IP部分 - 适应新的格式
-      const ipSection = output.match(/=============== 当前已放行 IP ===============([\s\S]*?)={3,}/);
-      if (ipSection && ipSection[1]) {
-        // 提取所有IP地址，包括带CIDR表示法的IP段
-        const ipAddresses = ipSection[1].match(/\d+\.\d+\.\d+\.\d+(?:\/\d+)?/g) || [];
-        return ipAddresses;
-      }
-      
-      // 如果没有找到特定格式，尝试提取所有IP地址
-      const ipAddresses = output.match(/\d+\.\d+\.\d+\.\d+(?:\/\d+)?/g) || [];
-      return ipAddresses;
-    } catch (error) {
-      console.error(`[诊断] 解析IP输出失败: ${error.message}`);
-      return [];
-    }
-  }
-
-  /**
-   * 配置DDoS防御规则
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
-  async setupDdosProtection(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 22);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `配置DDoS防御规则失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 为自定义端口配置DDoS防御
-   * @param {string} serverId - 服务器ID
-   * @param {number} port - 端口号
-   * @param {number} protoType - 协议类型：1=TCP, 2=UDP, 3=TCP+UDP
-   * @param {number} maxConn - 每IP最大连接数
-   * @param {number} maxRateMin - 每分钟最大新连接数
-   * @param {number} maxRateSec - 每秒最大新连接数
-   * @param {number} banHours - 违规IP封禁时长(小时)
-   * @returns {Promise<object>} - 操作结果
-   */
-  async setupCustomPortProtection(serverId, port, protoType = 1, maxConn = 400, maxRateMin = 400, maxRateSec = 300, banHours = 24) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const params = `${port} ${protoType} ${maxConn} ${maxRateMin} ${maxRateSec} ${banHours}`;
-      const result = await this._executeNftatoCommand(serverId, 23, params);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `配置自定义端口DDoS防御失败: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * 管理IP黑白名单
-   * @param {string} serverId - 服务器ID
-   * @param {number} actionType - 操作类型：1=添加白名单, 2=添加黑名单, 3=从白名单移除, 4=从黑名单移除
-   * @param {string} ip - IP地址
-   * @param {number} duration - 有效期（白名单为天数，黑名单为小时数）
-   * @returns {Promise<object>} - 操作结果
-   */
   async manageIpLists(serverId, actionType, ip, duration) {
-    try {
-      // 检查是否已有相同IP的操作正在进行中
-      const lockKey = `${serverId}:${ip}`;
-      if (this.ipListsLocks[lockKey]) {
-        console.log(`[警告] 已有相同IP(${ip})的操作正在进行中，请稍后再试`);
-        return {
-          success: false,
-          data: null,
-          error: `已有相同IP(${ip})的操作正在进行中，请稍后再试`
-        };
-      }
-
-      // 设置锁
-      this.ipListsLocks[lockKey] = true;
-      console.log(`[DEBUG] 已设置IP操作锁: ${lockKey}`);
-
-      try {
-        // 检查前置条件
-        const prereqCheck = await this._checkPrerequisites(serverId);
-        if (!prereqCheck.success) {
-          return prereqCheck;
-        }
-        
-        // 确保actionType是数字
-        const actionTypeNumber = parseInt(actionType, 10);
-        if (isNaN(actionTypeNumber)) {
-          return {
-            success: false,
-            data: null,
-            error: `无效的操作类型: ${actionType}`
-          };
-        }
-        
-        // 构造参数字符串
-        const params = `${actionTypeNumber} ${ip} ${duration || ''}`;
-        console.log(`[DEBUG] manageIpLists - 构造的参数: ${params}`);
-        
-        const result = await this._executeNftatoCommand(serverId, 24, params);
-
-        // 操作成功后验证IP是否真的已添加/移除
-        if (result.success) {
-          const verifyResult = await this._verifyIpListOperation(serverId, actionTypeNumber, ip);
-          if (!verifyResult.success) {
-            console.error(`[错误] IP操作验证失败: ${verifyResult.error}`);
-            return verifyResult;
-          }
-        }
-
-        return {
-          success: result.success,
-          data: result.output,
-          error: result.error
-        };
-      } finally {
-        // 释放锁
-        delete this.ipListsLocks[lockKey];
-        console.log(`[DEBUG] 已释放IP操作锁: ${lockKey}`);
-      }
-    } catch (error) {
-      // 确保异常情况下也释放锁
-      const lockKey = `${serverId}:${ip}`;
-      if (this.ipListsLocks[lockKey]) {
-        delete this.ipListsLocks[lockKey];
-        console.log(`[DEBUG] 异常情况下释放IP操作锁: ${lockKey}`);
-      }
-
-      return {
-        success: false,
-        data: null,
-        error: `管理IP黑白名单失败: ${error.message}`
-      };
-    }
+    const normalizedAction = Number(actionType);
+    const parameters = duration === undefined || duration === null || duration === ''
+      ? [normalizedAction, ip]
+      : [normalizedAction, ip, duration];
+    const result = await this._run(serverId, 24, parameters);
+    if (!result.success) return result;
+    const verification = await this._verifyIpListOperation(serverId, normalizedAction, ip);
+    return verification.success ? result : { ...result, success: false, error: verification.error };
   }
 
-  /**
-   * 验证IP黑白名单操作是否成功
-   * @param {string} serverId - 服务器ID
-   * @param {number} actionType - 操作类型
-   * @param {string} ip - IP地址
-   * @returns {Promise<object>} - 验证结果
-   */
   async _verifyIpListOperation(serverId, actionType, ip) {
+    if (![1, 2, 3, 4].includes(actionType) || !net.isIP(String(ip).split('/')[0])) {
+      return { success: false, error: 'IP名单操作参数无效' };
+    }
+    const isIpv6 = String(ip).includes(':');
+    const family = isIpv6 ? 'ip6 edge_dft_v6' : 'ip edge_dft_v4';
+    const set = actionType === 1 || actionType === 3 ? 'allow_set' : 'deny_set';
+    const shouldExist = actionType === 1 || actionType === 2;
     try {
-      // 等待一小段时间确保nftables规则已应用
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      let command = '';
-      // 根据操作类型和IP地址格式确定验证命令
-      const isIpv6 = ip.includes(':');
-      
-      if (actionType === 1 || actionType === 3) {
-        // 验证白名单操作
-        if (isIpv6) {
-          command = `nft list set ip6 edge_dft_v6 allow_set | grep -q "${ip}" && echo "success" || echo "failed"`;
-        } else {
-          command = `nft list set ip edge_dft_v4 allow_set | grep -q "${ip}" && echo "success" || echo "failed"`;
-        }
-        // 如果是移除操作，则结果应该相反
-        if (actionType === 3) {
-          command = command.replace('success" || echo "failed', 'failed" || echo "success');
-        }
-      } else if (actionType === 2 || actionType === 4) {
-        // 验证黑名单操作
-        if (isIpv6) {
-          command = `nft list set ip6 edge_dft_v6 deny_set | grep -q "${ip}" && echo "success" || echo "failed"`;
-        } else {
-          command = `nft list set ip edge_dft_v4 deny_set | grep -q "${ip}" && echo "success" || echo "failed"`;
-        }
-        // 如果是移除操作，则结果应该相反
-        if (actionType === 4) {
-          command = command.replace('success" || echo "failed', 'failed" || echo "success');
-        }
-      }
-      
-      if (!command) {
-        return { success: true }; // 如果无法构建验证命令，则默认成功
-      }
-      
-      // 执行验证命令
-      const scriptPath = await this._getScriptPath(serverId);
-      const result = await sshService.executeCommand(serverId, command);
-      
-      if (result.stdout.includes('success')) {
-        return { success: true };
-      } else {
-        let operationType = '';
-        switch (actionType) {
-          case 1: operationType = '添加到白名单'; break;
-          case 2: operationType = '添加到黑名单'; break;
-          case 3: operationType = '从白名单移除'; break;
-          case 4: operationType = '从黑名单移除'; break;
-        }
-        
-        return {
-          success: false,
-          error: `操作执行了但IP(${ip})未成功${operationType}`
-        };
-      }
+      const result = await this.ssh.executeCommand(
+        serverId,
+        `nft list set ${family} ${set} | grep -Fq -- ${shellQuote(ip)}`,
+        { readOnly: true }
+      );
+      if ((result.code === 0) === shouldExist) return { success: true };
+      return { success: false, error: `操作执行后未能在${set === 'allow_set' ? '白名单' : '黑名单'}中确认IP(${ip})状态` };
     } catch (error) {
-      console.error(`验证IP操作失败: ${error.message}`);
-      return { success: true }; // 验证失败不应该影响操作结果，默认成功
+      // The mutation already succeeded. A failed observation must not invite an
+      // automatic duplicate mutation; report the uncertain verification.
+      return { success: false, error: `IP操作已执行，但验证失败: ${error.message}` };
     }
   }
 
-  /**
-   * 查看当前防御状态
-   * @param {string} serverId - 服务器ID
-   * @returns {Promise<object>} - 操作结果
-   */
-  async viewDefenseStatus(serverId) {
-    try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      const result = await sshService.executeNftato(serverId, 25);
-      return {
-        success: result.success,
-        data: result.output,
-        error: result.error
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: `查看防御状态失败: ${error.message}`
-      };
-    }
+  _parsePortOutput(output) {
+    const plain = String(output).replace(/\u001b\[[0-9;]*m/g, '');
+    const parse = protocol => {
+      const expression = new RegExp(`${protocol}(?:端口| ports?)\\s*[:：]([\\s\\S]*?)(?=(?:TCP|UDP)(?:端口| ports?)\\s*[:：]|={3,}|$)`, 'i');
+      const section = plain.match(expression)?.[1] || '';
+      return [...new Set((section.match(/\b\d{1,5}\b/g) || []).map(Number).filter(port => port >= 1 && port <= 65535))];
+    };
+    return { tcp: parse('TCP'), udp: parse('UDP') };
+  }
+
+  _parseIPOutput(output) {
+    const plain = String(output).replace(/\u001b\[[0-9;]*m/g, '');
+    const candidates = plain.match(/[0-9A-Fa-f:.]+(?:\/\d{1,3})?/g) || [];
+    return [...new Set(candidates.filter(candidate => {
+      const [address, prefix] = candidate.split('/');
+      const family = net.isIP(address);
+      if (!family) return false;
+      if (prefix === undefined) return true;
+      const numericPrefix = Number(prefix);
+      return Number.isInteger(numericPrefix) && numericPrefix >= 0 && numericPrefix <= (family === 4 ? 32 : 128);
+    }))];
   }
 }
 
-module.exports = new NftablesService(); 
+const nftablesService = new NftablesService();
+nftablesService.NftablesService = NftablesService;
+
+module.exports = nftablesService;

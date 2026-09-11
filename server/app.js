@@ -103,8 +103,12 @@ function createApplication() {
   app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public/index.html')));
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);
-    const status = error.status === 413 ? 413 : error.status === 400 ? 400 : 500;
-    res.status(status).json({ success: false, message: status === 500 ? '服务器内部错误' : '请求内容无效或过大' });
+    const status = Number.isInteger(error.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
+    res.status(status).json({
+      success: false,
+      message: status === 500 ? '服务器内部错误' : error.message || '请求内容无效或过大',
+      ...(process.env.NODE_ENV === 'production' || status < 500 ? {} : { error: error.message })
+    });
   });
   return { app, server, io };
 }

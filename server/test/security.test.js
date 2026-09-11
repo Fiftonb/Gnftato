@@ -343,6 +343,25 @@ test('administrator connection, execution, deployment and firewall routes retain
   assert.equal(connections[id], undefined);
 });
 
+test('firewall routes reject a missing request body field as a client error', async () => {
+  const server = await Server.create({ name: 'Validation fixture', host: '192.0.2.20', username: 'root' });
+  const result = await request(`/api/rules/${server._id}/block/ports`, {
+    method: 'POST', token: adminToken
+  });
+  assert.equal(result.status, 400);
+  assert.equal(result.body.success, false);
+});
+
+test('the cache compatibility route rejects arbitrary client-defined fields', async () => {
+  const server = await Server.create({ name: 'Cache validation fixture', host: '192.0.2.21', username: 'root' });
+  const result = await request(`/api/rules/${server._id}/cache/untrusted-field`, {
+    method: 'PUT', token: adminToken, body: { value: { attackerControlled: true } }
+  });
+  assert.equal(result.status, 400);
+  assert.equal(result.body.success, false);
+  assert.equal(cache[server._id], undefined);
+});
+
 test('SSH failures produce a JSON error response while the server remains available', async () => {
   const server = await Server.create({ name: 'Failing mock SSH', host: '192.0.2.4', username: 'root' });
   connections[server._id] = {};

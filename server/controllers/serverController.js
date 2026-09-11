@@ -1,744 +1,200 @@
+'use strict';
+
 const Server = require('../models/Server');
 const sshService = require('../services/sshService');
+const { asyncHandler, httpError } = require('./controllerUtils');
 
-/**
- * 获取所有服务器
- */
-exports.getAllServers = async (req, res) => {
-  try {
-    const servers = await Server.find();
-    
-    // 手动过滤敏感字段
-    const filteredServers = servers.map(server => {
-      const { password, privateKey, ...filtered } = server;
-      return filtered;
-    });
-    
-    res.status(200).json({
-      success: true,
-      data: filteredServers
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '获取服务器列表失败',
-      error: error.message
-    });
+const editableFields = new Set(['name', 'host', 'port', 'username', 'authType', 'password', 'privateKey']);
+const credentials = server => {
+  const { password, privateKey, ...safe } = server;
+  return safe;
+};
+const connectionState = serverId => {
+  if (typeof sshService.getConnectionStatus === 'function') {
+    sshService.checkConnection(serverId);
+    return sshService.getConnectionStatus(serverId);
   }
+  const connected = Boolean(sshService.connections[serverId]) && sshService.checkConnection(serverId);
+  return { status: connected ? 'online' : 'offline', connected, valid: connected, lastConnection: null, changedAt: null, error: null };
+};
+const publicServer = server => {
+  const state = connectionState(server._id);
+  return { ...credentials(server), ...state, lastConnection: state.lastConnection || server.lastConnection || null };
+};
+const requireServer = async id => {
+  const server = await Server.findById(id);
+  if (!server) throw httpError(404, '服务器未找到');
+  return server;
 };
 
-/**
- * 获取单个服务器
- */
-exports.getServer = async (req, res) => {
+exports.getAllServers = asyncHandler(async (req, res) => {
+  const servers = await Server.find();
+  res.json({ success: true, data: servers.map(publicServer) });
+});
+
+exports.getServer = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: publicServer(await requireServer(req.params.id)) });
+});
+
+exports.createServer = asyncHandler(async (req, res) => {
+  const data = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => editableFields.has(key)));
+  if (!data.name || !data.host || !data.username) throw httpError(400, '服务器名称、主机和用户名不能为空');
+  const server = await Server.create(data);
+  res.status(201).json({ success: true, data: publicServer(server), message: '服务器添加成功' });
+});
+
+exports.updateServer = asyncHandler(async (req, res) => {
+  const data = Object.fromEntries(Object.entries(req.body || {}).filter(([key, value]) => editableFields.has(key) && value !== ''));
+  const server = await Server.findByIdAndUpdate(req.params.id, data);
+  if (!server) throw httpError(404, '服务器未找到');
+  res.json({ success: true, data: publicServer(server), message: '服务器信息更新成功' });
+});
+
+exports.deleteServer = asyncHandler(async (req, res) => {
+  if (sshService.connections[req.params.id]) await sshService.disconnect(req.params.id);
+  const server = await Server.findByIdAndDelete(req.params.id);
+  if (!server) throw httpError(404, '服务器未找到');
+  res.json({ success: true, message: '服务器已删除' });
+});
+
+exports.connectServer = asyncHandler(async (req, res) => {
+  await requireServer(req.params.id);
   try {
-    const server = await Server.findById(req.params.id);
-    
-    if (!server) {
-      return res.status(404).json({
-        success: false,
-        message: '服务器未找到'
-      });
-    }
-    
-    // 手动过滤敏感字段
-    const { password, privateKey, ...filteredServer } = server;
-    
-    res.status(200).json({
-      success: true,
-      data: filteredServer
-    });
+    const result = await sshService.connect(req.params.id);
+    const state = connectionState(req.params.id);
+    res.json({ success: true, message: result.message, serverStatus: state.status, connectionTime: state.lastConnection, data: state });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '获取服务器信息失败',
-      error: error.message
-    });
+    const state = connectionState(req.params.id);
+    res.status(500).json({ success: false, message: '连接服务器失败', error: error.message, serverStatus: state.status, data: state });
   }
-};
+});
 
-/**
- * 创建服务器
- */
-exports.createServer = async (req, res) => {
-  try {
-    const { name, host, port, username, authType, password, privateKey } = req.body;
-    
-    // 创建服务器
-    const server = await Server.create({
-      name,
-      host,
-      port,
-      username,
-      authType,
-      password,
-      privateKey
-    });
-    
-    // 手动过滤敏感字段
-    const { password: pwd, privateKey: pk, ...filteredServer } = server;
-    
-    res.status(201).json({
-      success: true,
-      data: filteredServer,
-      message: '服务器添加成功'
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '添加服务器失败',
-      error: error.message
-    });
-  }
-};
-
-/**
- * 更新服务器信息
- */
-exports.updateServer = async (req, res) => {
-  try {
-    // 如果不更新敏感信息，移除这些字段
-    if (!req.body.password) {
-      delete req.body.password;
-    }
-    if (!req.body.privateKey) {
-      delete req.body.privateKey;
-    }
-    
-    const server = await Server.findByIdAndUpdate(
-      req.params.id,
-      Object.fromEntries(Object.entries(req.body).filter(([key]) =>
-        ['name', 'host', 'port', 'username', 'authType', 'password', 'privateKey'].includes(key))),
-      { new: true }
-    );
-    
-    if (!server) {
-      return res.status(404).json({
-        success: false,
-        message: '服务器未找到'
-      });
-    }
-    
-    // 手动过滤敏感字段
-    const { password, privateKey, ...filteredServer } = server;
-    
-    res.status(200).json({
-      success: true,
-      data: filteredServer,
-      message: '服务器信息更新成功'
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '更新服务器信息失败',
-      error: error.message
-    });
-  }
-};
-
-/**
- * 删除服务器
- */
-exports.deleteServer = async (req, res) => {
-  try {
-    // 先检查是否有活动连接
-    if (sshService.connections[req.params.id]) {
-      // 断开连接
-      await sshService.disconnect(req.params.id);
-    }
-    
-    const server = await Server.findByIdAndDelete(req.params.id);
-    
-    if (!server) {
-      return res.status(404).json({
-        success: false,
-        message: '服务器未找到'
-      });
-    }
-    
-    res.status(200).json({
-      success: true,
-      message: '服务器已删除'
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '删除服务器失败',
-      error: error.message
-    });
-  }
-};
-
-/**
- * 连接到服务器
- */
-exports.connectServer = async (req, res) => {
-  try {
-    const serverId = req.params.id;
-    console.log(`尝试连接服务器，ID: ${serverId}`);
-    
-    // 检查服务器是否存在
-    const server = await Server.findById(serverId);
-    if (!server) {
-      console.error(`服务器不存在，ID: ${serverId}`);
-      return res.status(404).json({
-        success: false,
-        message: '服务器未找到'
-      });
-    }
-
-    // 如果已连接，返回成功
-    if (sshService.connections[serverId]) {
-      // 检查连接是否有效
-      if (sshService.checkConnection(serverId)) {
-        console.log(`服务器已连接且连接有效，ID: ${serverId}`);
-        
-        // 确保数据库状态与实际状态一致
-        await Server.findByIdAndUpdate(serverId, {
-          status: 'online',
-          lastConnection: new Date(),
-          updatedAt: new Date()
-        });
-        
-        return res.status(200).json({
-          success: true,
-          message: '服务器已连接',
-          serverStatus: 'online'
-        });
-      } else {
-        console.log(`服务器连接无效，尝试重新连接，ID: ${serverId}`);
-        // 连接已失效，需要重新连接
-      }
-    }
-
-    console.log(`开始建立SSH连接，服务器: ${server.name}, 主机: ${server.host}`);
-    const result = await sshService.connect(serverId);
-    console.log(`SSH连接建立成功，ID: ${serverId}`);
-    
-    // 增加连接后的状态信息
-    const updatedServer = await Server.findById(serverId);
-    
-    res.status(200).json({
-      success: true,
-      message: result.message,
-      serverStatus: updatedServer.status,
-      connectionTime: updatedServer.lastConnection
-    });
-  } catch (error) {
-    console.error(`连接服务器错误:`, error);
-    
-    // 确保服务器状态为错误
-    try {
-      await Server.findByIdAndUpdate(req.params.id, {
-        status: 'error',
-        updatedAt: new Date()
-      });
-    } catch (updateError) {
-      console.error('更新服务器状态出错:', updateError);
-    }
-    
-    res.status(500).json({
-      success: false,
-      message: '连接服务器失败',
-      error: error.message,
-      serverStatus: 'error',
-      stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
-    });
-  }
-};
-
-/**
- * 断开服务器连接
- */
-exports.disconnectServer = async (req, res) => {
+exports.disconnectServer = asyncHandler(async (req, res) => {
+  await requireServer(req.params.id);
   try {
     const result = await sshService.disconnect(req.params.id);
-    
-    // 获取最新服务器状态
-    const updatedServer = await Server.findById(req.params.id);
-    
-    res.status(200).json({
-      success: true,
-      message: result.message,
-      serverStatus: updatedServer.status
-    });
+    const state = connectionState(req.params.id);
+    res.json({ success: true, message: result.message, serverStatus: state.status, data: state });
   } catch (error) {
-    console.error(`断开服务器错误:`, error);
-    
-    // 确保服务器状态为离线或错误
-    try {
-      await Server.findByIdAndUpdate(req.params.id, {
-        status: 'error',
-        updatedAt: new Date()
-      });
-    } catch (updateError) {
-      console.error('更新服务器状态出错:', updateError);
-    }
-    
-    res.status(500).json({
-      success: false,
-      message: '断开服务器连接失败',
-      error: error.message,
-      serverStatus: 'offline'
-    });
+    const state = connectionState(req.params.id);
+    res.status(500).json({ success: false, message: '断开服务器连接失败', error: error.message, serverStatus: state.status, data: state });
   }
-};
+});
 
-/**
- * 在服务器上执行系统命令
- */
-exports.executeCommand = async (req, res) => {
-  const serverId = req.params.id;
+exports.executeCommand = asyncHandler(async (req, res) => {
+  const command = req.body?.command;
+  if (typeof command !== 'string' || !command.trim()) throw httpError(400, '命令不能为空');
+  if (command.length > 8192 || /[\0\r]/.test(command)) throw httpError(400, '命令内容无效或过长');
+  await requireServer(req.params.id);
+  if (!sshService.checkConnection(req.params.id)) await sshService.connect(req.params.id);
+  // Arbitrary administrator commands are conservatively treated as mutations.
   try {
-    const { command } = req.body;
-    
-    console.log(`接收到执行命令请求，服务器ID: ${serverId}, 命令: ${command}`);
-    
-    if (typeof command !== 'string' || !command.trim()) {
-      console.error('命令为空');
-      return res.status(400).json({
-        success: false,
-        message: '命令不能为空'
-      });
-    }
-    
-    // 检查服务器是否存在
-    const server = await Server.findById(serverId);
-    if (!server) {
-      console.error(`服务器不存在，ID: ${serverId}`);
-      return res.status(404).json({
-        success: false,
-        message: '服务器未找到'
-      });
-    }
-    
-    // 检查连接状态
-    if (!sshService.connections[serverId]) {
-      console.error(`无有效连接，服务器ID: ${serverId}`);
-      
-      // 尝试重新连接
-      try {
-        console.log(`尝试重新连接服务器，ID: ${serverId}`);
-        await sshService.connect(serverId);
-        console.log(`服务器重新连接成功，ID: ${serverId}`);
-      } catch (connError) {
-        console.error(`重新连接失败: ${connError.message}`);
-        return res.status(400).json({
-          success: false,
-          message: '服务器未连接，请先连接服务器',
-          error: connError.message
-        });
-      }
-    }
-    
-    // 确保连接有效
-    if (!sshService.checkConnection(serverId)) {
-      console.error(`SSH连接无效，服务器ID: ${serverId}`);
-      return res.status(400).json({
-        success: false,
-        message: 'SSH连接无效，请重新连接服务器'
-      });
-    }
-    
-    console.log(`开始执行命令: ${command}`);
-    const result = await sshService.executeCommand(serverId, command);
-    console.log(`命令执行完成，退出码: ${result.code}`);
-    
-    res.status(200).json({
-      success: true,
-      data: {
-        stdout: result.stdout,
-        stderr: result.stderr,
-        code: result.code
-      }
-    });
+    const execute = () => sshService.executeCommand(req.params.id, command, { readOnly: false });
+    const result = sshService.mutationQueue
+      ? await sshService.mutationQueue.run(req.params.id, execute)
+      : await execute();
+    res.json({ success: true, data: { stdout: result.stdout, stderr: result.stderr, code: result.code } });
   } catch (error) {
-    console.error(`执行命令出错: ${error.message}`, error);
-    
-    // 添加更详细的错误日志
-    const errorDetails = {
-      message: error.message,
-      stack: error.stack,
-      name: error.name,
-      code: error.code,
-      serverId: serverId
-    };
-    console.error('详细错误信息:', JSON.stringify(errorDetails, null, 2));
-    
     res.status(500).json({
       success: false,
       message: '执行命令失败',
       error: error.message,
-      errorDetails: process.env.NODE_ENV === 'production' ? undefined : errorDetails,
-      stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
+      outcomeUnknown: error.outcomeUnknown === true
     });
   }
-};
+});
 
-/**
- * 检测服务器状态
- */
-exports.checkServerStatus = async (req, res) => {
-  try {
-    const serverId = req.params.id;
-    const server = await Server.findById(serverId);
-    
-    if (!server) {
-      return res.status(404).json({
-        success: false,
-        message: '服务器未找到'
-      });
+exports.checkServerStatus = asyncHandler(async (req, res) => {
+  const server = await requireServer(req.params.id);
+  const state = connectionState(req.params.id);
+  res.json({
+    success: true,
+    data: {
+      ...state,
+      lastConnection: state.lastConnection || server.lastConnection || null,
+      backendConnected: state.connected,
+      backendConnectionValid: state.valid
     }
-    
-    // 检查连接状态
-    const isConnected = !!sshService.connections[serverId];
-    const isConnectionValid = isConnected ? sshService.checkConnection(serverId) : false;
-    
-    // 如果数据库状态与实际连接状态不符，更新数据库
-    let actualStatus = server.status;
-    if (isConnectionValid && server.status !== 'online') {
-      actualStatus = 'online';
-      await Server.findByIdAndUpdate(serverId, {
-        status: 'online',
-        updatedAt: new Date()
-      });
-    } else if (!isConnectionValid && server.status === 'online') {
-      actualStatus = 'offline';
-      await Server.findByIdAndUpdate(serverId, {
-        status: 'offline',
-        updatedAt: new Date()
-      });
-    }
-    
-    res.status(200).json({
-      success: true,
-      data: {
-        status: isConnectionValid ? 'online' : (server.status === 'error' ? 'error' : 'offline'),
-        lastConnection: server.lastConnection,
-        backendConnected: isConnected, // 后端实际是否有连接对象
-        backendConnectionValid: isConnectionValid // 后端连接是否有效
-      }
-    });
-  } catch (error) {
-    console.error('检查服务器状态失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '检查服务器状态失败',
-      error: error.message
-    });
-  }
-};
+  });
+});
 
-/**
- * 部署Nftato脚本到服务器
- */
-exports.deployIptato = async (req, res) => {
+exports.deployIptato = asyncHandler(async (req, res) => {
   const serverId = req.params.id;
-  let deploymentAcquired = false;
-  // 创建一个独立的响应已发送标记，避免重复发送响应
-  let responseSent = false;
-  
+  await requireServer(serverId);
+  if (!sshService.checkConnection(serverId)) throw httpError(400, '服务器未连接，请先连接服务器');
+  if (req.app.locals.deployingServers.has(serverId)) throw httpError(409, '该服务器已有部署任务正在执行');
+  req.app.locals.deployingServers.add(serverId);
   try {
-    // 检查服务器是否存在
-    const server = await Server.findById(serverId);
-    if (!server) {
-      return res.status(404).json({
-        success: false,
-        message: '服务器未找到'
-      });
-    }
-
-    // 检查服务器是否已连接
-    if (!sshService.connections[serverId]) {
-      return res.status(400).json({
-        success: false,
-        message: '服务器未连接，请先连接服务器'
-      });
-    }
-
-    if (req.app.locals.deployingServers.has(serverId)) {
-      return res.status(409).json({ success: false, message: '该服务器已有部署任务正在执行' });
-    }
-    req.app.locals.deployingServers.add(serverId);
-    deploymentAcquired = true;
-
-    // 检查是否需要使用WebSocket
-    const useWebSocket = req.query.useWebSocket === 'true' || req.body.useWebSocket === true;
-    
-    if (useWebSocket && req.app.io) {
-      // 立即发送初始响应，表示部署已开始
-      res.status(200).json({
-        success: true,
-        message: '脚本部署已开始，请通过WebSocket接收进度',
-        useWebSocket: true
-      });
-      responseSent = true;
-      
-      // 创建一个WebSocket房间ID，基于serverId和时间戳
-      const roomId = `deploy_${serverId}_${Date.now()}`;
-      
-      // 通知前端WebSocket连接信息
-      req.app.io.to(`user:${req.user.id}`).emit('deploy_start', {
-        serverId, 
-        roomId,
-        message: '开始部署过程，请等待...'
-      });
-      
-      // 创建进度回调函数，通过WebSocket发送进度
-      const progressCallback = (data) => {
-        req.app.io.to(`user:${req.user.id}`).emit(roomId, data);
-      };
-      
-      // 开始部署过程
+    const useWebSocket = req.query.useWebSocket === 'true' || req.body?.useWebSocket === true;
+    if (!useWebSocket || !req.app.io) {
       try {
-        await sshService.deployIptato(serverId, progressCallback);
-        // 部署完成，发送最终状态
-        req.app.io.to(`user:${req.user.id}`).emit(roomId, {
-          type: 'complete',
-          success: true,
-          message: '脚本部署成功完成！'
-        });
-      } catch (deployError) {
-        console.error('部署过程中出错:', deployError);
-        // 发送错误信息
-        req.app.io.to(`user:${req.user.id}`).emit(roomId, {
-          type: 'error',
+        await sshService.deployIptato(serverId);
+        return res.json({ success: true, message: '脚本部署成功' });
+      } catch (error) {
+        return res.status(500).json({
           success: false,
-          message: `部署失败: ${deployError.message}`
-        });
-      } finally {
-        // 发送关闭信号
-        setTimeout(() => {
-          req.app.io.to(`user:${req.user.id}`).emit(roomId, { type: 'close' });
-        }, 1000);
-      }
-    } else {
-      // 常规非WebSocket部署，直接执行并等待结果
-      await sshService.deployIptato(serverId);
-      
-      if (!responseSent) {
-        res.status(200).json({
-          success: true,
-          message: '脚本部署成功'
+          message: '部署Nftato脚本失败',
+          error: error.message,
+          outcomeUnknown: error.outcomeUnknown === true
         });
       }
     }
-  } catch (error) {
-    console.error('部署脚本错误:', error);
-    
-    // 添加更详细的错误日志
-    const errorDetails = {
-      message: error.message,
-      stack: error.stack,
-      name: error.name,
-      code: error.code,
-      serverId: req.params.id
-    };
-    console.error('详细部署脚本错误信息:', JSON.stringify(errorDetails, null, 2));
-    
-    if (!responseSent) {
-      res.status(500).json({
-        success: false,
-        message: '部署Nftato脚本失败',
-        error: error.message,
-        errorDetails: process.env.NODE_ENV === 'production' ? undefined : errorDetails
-      });
+    res.json({ success: true, message: '脚本部署已开始，请通过WebSocket接收进度', useWebSocket: true });
+    const roomId = `deploy_${serverId}_${Date.now()}`;
+    const room = `user:${req.user.id}`;
+    req.app.io.to(room).emit('deploy_start', { serverId, roomId, message: '开始部署过程，请等待...' });
+    try {
+      await sshService.deployIptato(serverId, data => req.app.io.to(room).emit(roomId, data));
+      req.app.io.to(room).emit(roomId, { type: 'complete', success: true, message: '脚本部署成功完成！' });
+    } catch (error) {
+      req.app.io.to(room).emit(roomId, { type: 'error', success: false, message: `部署失败: ${error.message}` });
+    } finally {
+      setTimeout(() => req.app.io.to(room).emit(roomId, { type: 'close' }), 1000);
     }
   } finally {
-    if (deploymentAcquired) req.app.locals.deployingServers.delete(serverId);
+    req.app.locals.deployingServers.delete(serverId);
   }
-};
+});
 
-/**
- * 获取服务器连接日志
- */
-exports.getServerLogs = async (req, res) => {
+exports.getServerLogs = asyncHandler(async (req, res) => {
+  const server = await requireServer(req.params.id);
+  const state = connectionState(req.params.id);
+  const timestamp = new Date().toISOString();
+  const logs = [
+    `[${timestamp}] 服务器ID: ${req.params.id}`,
+    `[${timestamp}] 服务器名称: ${server.name}`,
+    `[${timestamp}] 连接状态: ${state.status}`,
+    `[${timestamp}] 后端连接有效: ${state.valid ? '是' : '否'}`
+  ];
+  if (state.error) logs.push(`[${timestamp}] 最近错误: ${state.error}`);
+  res.json({ success: true, data: logs.join('\n'), connectionStatus: state });
+});
+
+exports.checkScriptExists = asyncHandler(async (req, res) => {
+  await requireServer(req.params.id);
+  if (!sshService.checkConnection(req.params.id)) throw httpError(400, '服务器未连接，请先连接服务器');
+  const result = await sshService.executeCommand(
+    req.params.id,
+    'if [ -f /root/Nftato.sh ]; then printf root; elif [ -f "$HOME/Nftato.sh" ]; then printf home; else printf missing; fi',
+    { readOnly: true }
+  );
+  const location = result.stdout.trim();
+  const exists = location === 'root' || location === 'home';
+  res.json({
+    success: true,
+    exists,
+    location: location === 'root' ? '/root/Nftato.sh' : location === 'home' ? '~/Nftato.sh' : '',
+    message: exists ? 'Nftato脚本已部署' : 'Nftato脚本未部署',
+    upgradeResult: null
+  });
+});
+
+exports.testConnection = asyncHandler(async (req, res) => {
+  if (!req.body?.host || !req.body?.username) throw httpError(400, '缺少必要的连接信息');
   try {
-    const serverId = req.params.id;
-    const server = await Server.findById(serverId);
-    
-    if (!server) {
-      return res.status(404).json({
-        success: false,
-        message: '服务器未找到'
-      });
-    }
-    
-    // 检查连接状态
-    const isConnected = !!sshService.connections[serverId];
-    const isConnectionValid = isConnected ? sshService.checkConnection(serverId) : false;
-    
-    // 获取最近的系统日志（提取服务器连接相关的日志条目）
-    let logs = [];
-    
-    // 添加连接状态信息
-    logs.push(`[${new Date().toISOString()}] 服务器ID: ${serverId}`);
-    logs.push(`[${new Date().toISOString()}] 服务器名称: ${server.name}`);
-    logs.push(`[${new Date().toISOString()}] 数据库中状态: ${server.status}`);
-    logs.push(`[${new Date().toISOString()}] 后端有连接对象: ${isConnected ? '是' : '否'}`);
-    
-    if (isConnected) {
-      logs.push(`[${new Date().toISOString()}] 连接对象有效: ${isConnectionValid ? '是' : '否'}`);
-      
-      // 获取连接详细信息
-      const conn = sshService.connections[serverId];
-      if (conn) {
-        logs.push(`[${new Date().toISOString()}] 连接状态: ${conn._state || '未知'}`);
-        logs.push(`[${new Date().toISOString()}] 套接字可读: ${conn._sock?.readable ? '是' : '否'}`);
-        logs.push(`[${new Date().toISOString()}] 套接字可写: ${conn._sock?.writable ? '是' : '否'}`);
-      }
-      
-      if (isConnectionValid) {
-        logs.push(`[${new Date().toISOString()}] 服务器已连接且连接有效`);
-      } else {
-        logs.push(`[${new Date().toISOString()}] 服务器连接对象存在但可能无效`);
-      }
-    } else {
-      logs.push(`[${new Date().toISOString()}] 当前没有活动的SSH连接`);
-    }
-    
-    // 如果数据库状态为在线但实际连接检查显示不在线
-    if (server.status === 'online' && !isConnectionValid) {
-      logs.push(`[${new Date().toISOString()}] 状态不一致：数据库显示在线但连接检查显示不在线`);
-    }
-    
-    // 如果数据库状态为离线但实际连接有效
-    if ((server.status === 'offline' || server.status === 'error') && isConnectionValid) {
-      logs.push(`[${new Date().toISOString()}] 状态不一致：数据库显示${server.status}但连接实际有效`);
-    }
-    
-    // 返回系统日志
-    res.status(200).json({
-      success: true,
-      data: logs.join('\n'),
-      connectionStatus: {
-        databaseStatus: server.status,
-        actualConnected: isConnected,
-        connectionValid: isConnectionValid
-      }
-    });
+    const result = await sshService.testConnection(req.body);
+    res.json({ success: true, message: '连接测试成功', data: result });
   } catch (error) {
-    console.error('获取服务器日志失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取服务器日志失败',
-      error: error.message
-    });
+    res.status(400).json({ success: false, message: `连接测试失败: ${error.message}` });
   }
-};
-
-/**
- * 检查Nftato脚本是否已存在于服务器
- */
-exports.checkScriptExists = async (req, res) => {
-  try {
-    const serverId = req.params.id;
-    console.log(`检查服务器 ${serverId} 是否已部署Nftato脚本`);
-    
-    // 检查服务器是否存在
-    const server = await Server.findById(serverId);
-    if (!server) {
-      return res.status(404).json({
-        success: false,
-        message: '服务器未找到'
-      });
-    }
-
-    // 检查服务器是否已连接
-    if (!sshService.connections[serverId]) {
-      return res.status(400).json({
-        success: false,
-        message: '服务器未连接，请先连接服务器'
-      });
-    }
-
-    // 检查连接是否有效
-    if (!sshService.checkConnection(serverId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'SSH连接无效，请重新连接服务器'
-      });
-    }
-
-    // 执行检查命令
-    const result = await sshService.executeCommand(
-      serverId, 
-      'test -f ~/Nftato.sh && echo "exists_home" || test -f /root/Nftato.sh && echo "exists_root" || echo "not_found"'
-    );
-
-    const scriptExists = result.stdout.includes('exists_home') || result.stdout.includes('exists_root');
-    const location = result.stdout.includes('exists_home') ? '~/Nftato.sh' : 
-                    result.stdout.includes('exists_root') ? '/root/Nftato.sh' : '';
-
-    // 如果脚本存在，运行升级命令
-    let upgradeResult = null;
-    if (scriptExists) {
-      console.log(`在服务器 ${serverId} 上运行Nftato升级核心脚本命令`);
-      try {
-        const scriptPath = location === '~/Nftato.sh' ? '~/Nftato.sh' : '/root/Nftato.sh';
-        upgradeResult = await sshService.executeCommand(serverId, `bash ${scriptPath} 21`);
-        console.log('升级核心脚本结果:', upgradeResult);
-      } catch (upgradeError) {
-        console.error('运行升级命令失败:', upgradeError);
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      exists: scriptExists,
-      location: location,
-      message: scriptExists ? 'Nftato脚本已部署' : 'Nftato脚本未部署',
-      upgradeResult: upgradeResult ? {
-        success: true,
-        stdout: upgradeResult.stdout,
-        stderr: upgradeResult.stderr
-      } : null
-    });
-  } catch (error) {
-    console.error('检查脚本存在状态失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '检查脚本存在状态失败',
-      error: error.message
-    });
-  }
-};
-
-/**
- * 测试服务器连接
- */
-exports.testConnection = async (req, res) => {
-  try {
-    // 获取请求中的服务器信息
-    const serverData = req.body;
-    
-    console.log('接收到测试连接请求:', {
-      host: serverData.host,
-      port: serverData.port,
-      username: serverData.username,
-      authType: serverData.authType
-    });
-    
-    if (!serverData.host || !serverData.username) {
-      return res.status(400).json({
-        success: false,
-        message: '缺少必要的连接信息'
-      });
-    }
-    
-    // 测试连接
-    const result = await sshService.testConnection(serverData);
-    
-    res.status(200).json({
-      success: true,
-      message: '连接测试成功',
-      data: result
-    });
-  } catch (error) {
-    console.error('测试连接失败:', error);
-    res.status(400).json({
-      success: false,
-      message: '连接测试失败: ' + error.message
-    });
-  }
-};
+});
