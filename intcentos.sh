@@ -16,8 +16,9 @@ mkdir -p /etc/nftables
 cat > /etc/nftables/main.nft << EOF
 #!/usr/sbin/nft -f
 
-# 清空现有规则
-flush ruleset
+# 仅替换 Gnftato 的基础表，保留 Docker 的 NAT/转发规则
+add table inet filter
+delete table inet filter
 
 # 基本防火墙规则
 table inet filter {
@@ -35,11 +36,18 @@ table inet filter {
         ip6 nexthdr icmpv6 accept
         
         # 允许SSH
-        tcp dport ${SSH_PORT} accept
+        tcp dport ${SSH_PORT} accept comment "shellsettcp"
+        tcp dport 80 accept comment "shellsettcp"
+        tcp dport 443 accept comment "shellsettcp"
     }
     
     chain forward {
         type filter hook forward priority 0; policy drop;
+        ct state invalid drop
+        iifname "docker0" accept
+        iifname "br-*" accept
+        oifname "docker0" ct state established,related accept
+        oifname "br-*" ct state established,related accept
     }
     
     chain output {
@@ -63,8 +71,17 @@ chmod 600 /etc/sysconfig/nftables.conf
 restorecon -v /etc/nftables/main.nft || true
 restorecon -v /etc/sysconfig/nftables.conf || true
 
-# 重启nftables服务
-systemctl restart nftables
+# 当前规则已生效；禁止服务停止/重启时清空 Docker 的表。
+mkdir -p /etc/systemd/system/nftables.service.d
+cat > /etc/systemd/system/nftables.service.d/nftato.conf << EOF
+[Service]
+ExecStart=
+ExecStart=$(command -v nft) -f /etc/sysconfig/nftables.conf
+ExecReload=
+ExecReload=$(command -v nft) -f /etc/sysconfig/nftables.conf
+ExecStop=
+EOF
+systemctl daemon-reload
 
 # 确保服务开机启动
 systemctl enable nftables
@@ -73,5 +90,5 @@ echo "检查nftables规则..."
 nft list ruleset
 
 echo "防火墙配置完成"
-echo "已放行SSH端口 ${SSH_PORT}"
+echo "已放行SSH端口 ${SSH_PORT}、80/tcp、443/tcp，并启用 Docker bridge 出站兼容"
 echo "出站流量不受限制"

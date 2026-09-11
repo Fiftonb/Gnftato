@@ -4,10 +4,10 @@ export PATH
 #=================================================
 #       System Required: CentOS/Debian/Ubuntu
 #       Description: nftables 出封禁 入放行
-#       Version: 2.0.2
+#       Version: 2.0.4
 #=================================================
 
-sh_ver="2.0.3"
+sh_ver="2.0.4"
 Green_font_prefix="\033[32m"
 Red_font_prefix="\033[31m"
 Green_background_prefix="\033[42;37m"
@@ -107,9 +107,9 @@ check_system() {
 check_run() {
     runflag=0
     if [ ! -e "${checkfile}" ]; then
-        touch $checkfile
+        set_environment || exit 1
+        touch "$checkfile"
         echo "首次运行判断文件生成"
-        set_environment
         echo "初次运行脚本 环境部署完成"
     else
         runflag=1
@@ -147,7 +147,7 @@ shell_run_tips() {
     if [ ${runflag} -eq 0 ]; then
         echo
         echo "本脚本默认接管 控制出入网 权限"
-        echo "入网端口仅放行了 SSH端口"
+        echo "入网默认放行 SSH、80/tcp、443/tcp；已启用 Docker bridge 出站兼容"
         echo
     fi
 }
@@ -159,53 +159,8 @@ set_environment() {
     install_tool
     install_nftables_modules
 
-    # 对iptables进行基本配置
-    if [[ $USE_IPTABLES_FOR_KEYWORDS -eq 1 ]]; then
-        # 确保iptables规则目录存在
-        if [ "$release" == "debian" ] || [ "$release" == "ubuntu" ]; then
-            mkdir -p /etc/iptables
-        fi
-
-        # 如果需要，配置iptables服务
-        if [ "$release" == "centos" ] && command -v systemctl &>/dev/null; then
-            systemctl enable iptables
-            systemctl start iptables
-        fi
-
-        # 清除所有现有规则
-        iptables -F
-        iptables -X
-        iptables -t nat -F
-        iptables -t nat -X
-        iptables -t mangle -F
-        iptables -t mangle -X
-        iptables -P INPUT ACCEPT
-        iptables -P FORWARD ACCEPT
-        iptables -P OUTPUT ACCEPT
-
-        # 保存初始状态
-        if [ "$release" == "debian" ] || [ "$release" == "ubuntu" ]; then
-            iptables-save >/etc/iptables/rules.v4
-
-            # 创建自动加载脚本
-            cat >/etc/network/if-pre-up.d/iptables <<-EOF
-#!/bin/bash
-/sbin/iptables-restore < /etc/iptables/rules.v4
-exit 0
-EOF
-            chmod +x /etc/network/if-pre-up.d/iptables
-        elif [ "$release" == "centos" ]; then
-            if command -v service &>/dev/null; then
-                service iptables save
-            else
-                mkdir -p /etc/sysconfig
-                iptables-save >/etc/sysconfig/iptables
-            fi
-        fi
-    fi
-
+    # iptables 的 FORWARD/NAT 规则可能由 Docker 管理，不能清空或保存为静态快照。
     setup_nftables_base
-    able_ssh_port
 }
 
 # 禁用冲突的防火墙
@@ -232,30 +187,7 @@ disable_conflicting_firewalls() {
         fi
     fi
 
-    # 处理 iptables
-    if command -v iptables &>/dev/null; then
-        iptables_service=$(systemctl is-active iptables 2>/dev/null)
-        if [ "${iptables_service}" == "active" ]; then
-            echo "检测到iptables服务正在运行，正在停止..."
-            systemctl stop iptables
-            systemctl disable iptables
-            echo "成功禁用iptables服务"
-        fi
-
-        # 清空iptables规则
-        if command -v iptables-save &>/dev/null; then
-            echo "清空现有iptables规则..."
-            iptables -F
-            iptables -X
-            iptables -t nat -F
-            iptables -t nat -X
-            iptables -t mangle -F
-            iptables -t mangle -X
-            iptables -P INPUT ACCEPT
-            iptables -P FORWARD ACCEPT
-            iptables -P OUTPUT ACCEPT
-        fi
-    fi
+    # 保留 iptables 服务及其规则，避免删除 Docker 的转发、隔离和 NAT 链。
 
     echo "防火墙冲突检查完成"
 }
@@ -416,71 +348,107 @@ install_nftables_modules() {
     fi
 }
 
+# 本项目管理的表；Docker 和其他工具的表不在此列表中。
+nftato_tables() {
+    printf '%s\n' 'inet filter' 'inet mangle' 'ip edge_dft_v4' 'ip6 edge_dft_v6'
+}
+
+# add 已存在的表是幂等操作，随后 delete，可兼容首次安装和旧版 nft。
+# 与后续建表放进同一个 nft -f 事务，避免中途丢失 SSH/Web 放行规则。
+reset_nftato_tables() {
+    local family table
+    while read -r family table; do
+        echo "add table $family $table"
+        echo "delete table $family $table"
+    done < <(nftato_tables)
+}
+
 # 设置nftables基础结构
 setup_nftables_base() {
-    # 创建目录
-    mkdir -p /etc/nftables
-    mkdir -p /etc/iptables
+    local rules_file web_port
+    local web_ports
+    read -r -a web_ports <<<"80 443 ${NFTATO_WEB_PORTS//,/ }"
 
-    # 确保关键词文件存在
+    # 自定义 Web 端口在修改防火墙前校验。80/443 始终作为初始默认值。
+    for web_port in "${web_ports[@]}"; do
+        if [[ ! "$web_port" =~ ^[0-9]{1,5}$ ]] || ((10#$web_port < 1 || 10#$web_port > 65535)); then
+            echo "错误: 无效的 Web 端口: $web_port" >&2
+            return 1
+        fi
+    done
+    get_ssh_port
+    mkdir -p /etc/nftables /etc/iptables
     touch "$keywords_file"
+    rules_file=$(mktemp) || return 1
+    {
+        reset_nftato_tables
+        cat <<EOF
+table inet filter {
+    chain input {
+        type filter hook input priority 0; policy drop;
+        ct state established,related accept
+        iifname "lo" accept
+        ip protocol icmp accept
+        ip6 nexthdr icmpv6 accept
+        ip ttl gt 80 accept
+        tcp dport $PORT accept comment "shellsettcp"
+        udp dport $PORT accept comment "shellsetudp"
+EOF
+        # 单端口规则沿用现有标签，WebUI 可查看并单独取消放行。
+        for web_port in $(printf '%s\n' "${web_ports[@]}" | sort -nu); do
+            if [ "$web_port" -ne "$PORT" ]; then
+                echo "        tcp dport $((10#$web_port)) accept comment \"shellsettcp\""
+            fi
+        done
+        cat <<'EOF'
+    }
+    chain output {
+        type filter hook output priority 0; policy accept;
+    }
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+        ct state invalid drop
+        # 按接口名匹配，也支持初始化后创建的 Docker bridge，不绑定外网网卡名。
+        iifname "docker0" accept comment "nftato-docker-out"
+        iifname "br-*" accept comment "nftato-docker-out"
+        oifname "docker0" ct state established,related accept comment "nftato-docker-reply"
+        oifname "br-*" ct state established,related accept comment "nftato-docker-reply"
+    }
+}
+table inet mangle {
+    chain prerouting {
+        type filter hook prerouting priority -150;
+    }
+    chain output {
+        type filter hook output priority -150;
+    }
+}
+EOF
+    } >"$rules_file"
 
-    # 清空现有nftables规则
-    nft flush ruleset
-
-    # 若使用iptables清空filter和nat表规则，但保留mangle表的规则（用于关键词过滤）
-    if command -v iptables &>/dev/null; then
-        iptables -F
-        iptables -X
-        iptables -t nat -F
-        iptables -t nat -X
-        # 不清空mangle表，因为它可能包含关键词过滤规则
-        iptables -P INPUT ACCEPT
-        iptables -P FORWARD ACCEPT
-        iptables -P OUTPUT ACCEPT
+    if ! nft -f "$rules_file"; then
+        rm -f "$rules_file"
+        echo "错误: 初始化失败，原有防火墙规则未更改" >&2
+        return 1
     fi
-
-    # 创建基本表和链
-    nft add table inet filter
-
-    # 创建input链
-    nft add chain inet filter input { type filter hook input priority 0\; policy drop\; }
-
-    # 创建output链
-    nft add chain inet filter output { type filter hook output priority 0\; policy accept\; }
-
-    # 创建forward链
-    nft add chain inet filter forward { type filter hook forward priority 0\; policy drop\; }
-
-    # 创建mangle表用于非关键词过滤的mangle操作
-    nft add table inet mangle
-    nft add chain inet mangle prerouting { type filter hook prerouting priority -150\; }
-    nft add chain inet mangle output { type filter hook output priority -150\; }
-
-    # 添加基本规则
-    # 允许已建立连接和相关流量
-    nft add rule inet filter input ct state established,related accept
-
-    # 允许本地回环接口
-    nft add rule inet filter input iifname "lo" accept
-
-    # 允许ICMP
-    nft add rule inet filter input ip protocol icmp accept
-    nft add rule inet filter input ip6 nexthdr icmpv6 accept
-
-    # TTL匹配（等效于iptables的TTL匹配）
-    nft add rule inet filter input ip ttl gt 80 accept
-
-    # 保存规则
+    rm -f "$rules_file"
     save_nftables_rules
 }
 
 # 获取SSH端口
 get_ssh_port() {
-    PORT=$(netstat -anp | grep sshd | awk 'NR==1{print substr($4, index($4,":")+1)}')
-    if [ -z "$PORT" ]; then
-        PORT=22 # 默认SSH端口
+    # SSH_CONNECTION 的最后一项是当前连接的服务端端口（兼容 IPv6）。
+    PORT=${SSH_CONNECTION##* }
+    if [[ ! "$PORT" =~ ^[0-9]{1,5}$ ]] || ((10#$PORT < 1 || 10#$PORT > 65535)); then
+        PORT=$(ss -H -ltnp 2>/dev/null | awk '/sshd/ {n=split($4, address, ":"); print address[n]; exit}')
     fi
+    if [[ ! "$PORT" =~ ^[0-9]{1,5}$ ]] || ((10#$PORT < 1 || 10#$PORT > 65535)); then
+        PORT=$(netstat -lntp 2>/dev/null | awk '/sshd/ {n=split($4, address, ":"); print address[n]; exit}')
+    fi
+    if [[ ! "$PORT" =~ ^[0-9]{1,5}$ ]] || ((10#$PORT < 1 || 10#$PORT > 65535)); then
+        PORT=22
+    fi
+    PORT=$((10#$PORT))
 }
 
 # 放行SSH端口
@@ -507,11 +475,33 @@ able_ssh_port() {
 save_nftables_rules() {
     echo "正在保存nftables规则..."
 
-    # 保存到配置文件
-    nft list ruleset >$nft_ruleset
+    # 只持久化本项目的表，避免在重载时复活 Docker 的旧网络/容器规则。
+    local family table saved_rules table_rules
+    local service_conf="$nft_conf"
+    saved_rules=$(mktemp "${nft_ruleset}.XXXXXX") || return 1
+    reset_nftato_tables >"$saved_rules"
+    while read -r family table; do
+        if nft list table "$family" "$table" >/dev/null 2>&1; then
+            if ! table_rules=$(nft list table "$family" "$table"); then
+                rm -f "$saved_rules"
+                return 1
+            fi
+            printf '%s\n' "$table_rules" >>"$saved_rules"
+        elif [ "$family" = inet ]; then
+            echo "错误: 无法读取 $family $table，保留原有规则文件" >&2
+            rm -f "$saved_rules"
+            return 1
+        fi
+    done < <(nftato_tables)
+    if ! nft -c -f "$saved_rules"; then
+        rm -f "$saved_rules"
+        return 1
+    fi
+    mv "$saved_rules" "$nft_ruleset" || return 1
 
     # 为CentOS特别处理
     if [ "$release" == "centos" ]; then
+        service_conf="/etc/sysconfig/nftables.conf"
         # 确保/etc/sysconfig目录存在
         mkdir -p /etc/sysconfig
 
@@ -531,8 +521,6 @@ EOF
         cat >$nft_conf <<EOF
 #!/usr/sbin/nft -f
 
-flush ruleset
-
 include "$nft_ruleset"
 EOF
     fi
@@ -540,18 +528,21 @@ EOF
     # 确保权限正确
     chmod 644 $nft_ruleset
 
-    # 启用nftables服务
-    if [ "$release" == "centos" ]; then
-        # CentOS特定服务重启方式
-        if systemctl is-active nftables &>/dev/null; then
-            systemctl restart nftables
-        else
-            systemctl start nftables
-        fi
-    else
-        systemctl restart nftables
+    # 部分发行版的 ExecStop/ExecReload 会全局清空规则，统一使用本项目配置。
+    # 当前规则已经生效，保存时无需重启服务。
+    if command -v systemctl &>/dev/null; then
+        mkdir -p /etc/systemd/system/nftables.service.d
+        cat >/etc/systemd/system/nftables.service.d/nftato.conf <<EOF
+[Service]
+ExecStart=
+ExecStart=$(command -v nft) -f $service_conf
+ExecReload=
+ExecReload=$(command -v nft) -f $service_conf
+ExecStop=
+EOF
+        systemctl daemon-reload || return 1
+        systemctl enable nftables || return 1
     fi
-    systemctl enable nftables
 
     echo "nftables规则保存完成"
 }
@@ -1469,18 +1460,10 @@ set_in_ips() {
 
 # 清空重建规则
 clear_rebuild_ipta() {
-    # 清空所有规则
-    nft flush ruleset
+    setup_nftables_base || return 1
+    echo "已重建 Gnftato 规则，保留 Docker 及其他工具管理的表"
+    echo "已放行 SSH端口：${PORT}、80/tcp、443/tcp 及指定的 Web 端口"
 
-    # 重新设置基础结构
-    setup_nftables_base
-
-    echo "已清空所有规则"
-
-    # 放行SSH端口
-    able_ssh_port
-
-    echo "仅放行了 SSH端口：${PORT}"
 }
 
 # 检查网络环境
@@ -2434,7 +2417,7 @@ ${Green_font_prefix}25.${Font_color_suffix} 查看 当前防御状态
 ${Red_font_prefix}增强功能
 
 ${Green_font_prefix}19.${Font_color_suffix} 查看 当前SSH端口
-${Green_font_prefix}20.${Font_color_suffix} 夺回出入控制(清空所有规则)
+${Green_font_prefix}20.${Font_color_suffix} 重建 Gnftato 规则(保留 Docker 规则)
 
 ————————————
 ${Green_font_prefix}21.${Font_color_suffix} 升级脚本
@@ -2455,8 +2438,9 @@ extra_param=$2
 if [ $is_automated -eq 1 ]; then
     echo -e "${Info} 自动化模式：开始初始化环境"
     # 在自动模式下，直接执行初始化
-    setup_nftables_base
-    able_ssh_port
+    if [ "$runflag" -eq 1 ]; then
+        setup_nftables_base || exit 1
+    fi
     echo -e "${Info} 自动化模式：初始化完成，防火墙已设置"
     exit 0
 fi
@@ -2581,7 +2565,7 @@ if [[ ! -z $action ]]; then
         ;;
     20)
         clear_rebuild_ipta
-        exit 0
+        exit $?
         ;;
     21)
         Update_Shell

@@ -17,7 +17,24 @@
 - **登录认证**：用户身份验证，保护管理界面安全
 - **DDOS防御**：借鉴Goedge防御规则实现的脚本防御
 
-> 需要注意，使用同类用到nftables命令的工具会使规则冲突。清除规则则可以夺回控制权。脚本首次运行默认只放行ssh端口，且ssh端口无法取消放行。
+> 首次初始化和“清空所有规则”（重建 Gnftato 规则）默认放行 SSH、80/tcp 和 443/tcp；SSH 端口不能通过面板取消放行。HTTP/HTTPS 端口可在面板中单独关闭，普通保存和重载不会重新开放已关闭的端口。
+
+### Docker 与 Web 入口
+
+- 默认允许 `docker0` 和 `br-*` bridge 发起转发连接及 `established,related` 回包，不依赖外网网卡名称；初始化后新建的同名 bridge 也适用。Docker 自身的隔离规则仍然生效。
+- 初始化、重建和保存仅管理 `inet filter`、`inet mangle`、`ip edge_dft_v4`、`ip6 edge_dft_v6`，保留 Docker 的 NAT/转发规则，不把 Docker 动态规则写进持久化快照。使用同名表的其他防火墙仍可能冲突。
+- 转发链仍默认拒绝其他流量。Docker 发布端口的入站流量经过 `forward`，宿主机的 80/443 放行规则仅作用于 `input`；本次出站兼容不会自动开放容器发布端口。自定义 bridge 名称需要额外配置转发规则。
+- 面板直接使用 `3001`（项目默认端口）或其他非标准端口时，首次运行/重建前用 `NFTATO_WEB_PORTS` 指定额外 TCP 端口；由宿主机 80/443 反向代理访问则无需额外指定：
+
+```sh
+NFTATO_WEB_PORTS=3001,8443 bash Nftato.sh
+# 自动初始化/重建（会重置 Gnftato 自定义规则）
+AUTOMATED=yes NFTATO_WEB_PORTS=3001,8443 bash Nftato.sh 20
+```
+
+初始化规则以一个 nftables 事务生效，避免设置默认拒绝后再逐条开放 SSH/Web 的空窗。保存只写入本项目的规则，并覆盖 nftables 服务默认的全局清空停止行为；停止该服务会保留当前规则，重启会重新加载本项目的规则。
+
+已安装旧版的服务器需要更新远程 `Nftato.sh` 后再重建；重建会恢复上述默认规则，请先记录需要保留的自定义规则。若旧版已清除了 Docker NAT 规则，新版不能推导恢复 Docker 的动态状态，需要在维护窗口重启 Docker 以重建其网络规则。
 
 ## TODO
 
